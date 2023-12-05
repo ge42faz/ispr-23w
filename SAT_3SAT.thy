@@ -2962,6 +2962,11 @@ lemma nth_butlast_set: "i < length l - 2 \<Longrightarrow> l ! i \<in> set (butl
 lemma "(f\<up>) (Pos v) \<Longrightarrow> a \<noteq> v \<Longrightarrow> ((fun_upd f a b)\<up>) (Pos v)"
 	unfolding lift_def by auto
 
+value "take 2 [0::nat, 1, 2]"
+value "drop 2 [0::nat, 1, 2]"
+
+lemma set_fold_ident_upd: "\<forall>l \<in> set xs. ident l \<noteq> ident t \<Longrightarrow> (fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := a) else f) xs f) (ident t) = f (ident t)"
+	by (induction xs arbitrary: a t f) auto
 
 lemma checkpoint:
 	assumes "sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
@@ -3063,10 +3068,10 @@ proof -
 		have "\<exists>x y z. x \<noteq> y \<and> y \<noteq> z \<and> x \<noteq> z \<and> c_tgt = {x, y, z}"
 			using card3 by (meson card_3_iff)
 
-		moreover have "tgt \<noteq> Neg lv"
+		moreover have tgt_lv: "tgt \<noteq> Neg lv"
 			using tgt1 assms(2) lv_vars idset_iff by (meson UnionI list.set_intros(1) subset_iff)
 
-		moreover have "tgt \<noteq> Pos rv"
+		moreover have tgt_rv: "tgt \<noteq> Pos rv"
 			using tgt1 assms(2) rv_vars idset_iff by (meson UnionI list.set_intros(1) subset_iff)
 
 		ultimately have "c_tgt = {Neg lv, tgt, Pos rv}"
@@ -3076,13 +3081,96 @@ proof -
 			using tgt2 by auto
 		then obtain vmap_n2 where vmap_n2: "vmap_n2 = fun_upd vmap_n1 lv True"
 			by auto
-		then obtain vmap_new where vmap_new: "vmap_new = fun_upd vmap_n2 rv False"
+		then obtain vmap_tgt where vmap_tgt: "vmap_tgt = fun_upd vmap_n2 rv False"
 			by auto
 
-		hence "\<not>(vmap_new\<up>) (Neg lv)"
+		hence "\<not>(vmap_tgt\<up>) (Neg lv)"
 			using lv_rv vmap_n2 unfolding lift_def by simp
-		hence "\<not>(vmap_new\<up>) (Pos rv)"
-			using vmap_new unfolding lift_def by simp
+		hence "\<not>(vmap_tgt\<up>) (Pos rv)"
+			using vmap_tgt unfolding lift_def by simp
+		hence vmap_tgt_carry: "(vmap_tgt\<up>) tgt"
+			using tgt_lv tgt_rv vmap_n1 vmap_n2 vmap_tgt lift_def
+			by (smt fun_upd_apply lit.exhaust lit.simps(5) lit.simps(6))
+
+		let ?front = "take (2*i) (tl (rev ?s))"
+		let ?rear = "drop (2*(Suc i)) (tl (rev ?s))"
+
+		obtain vmap_tgt_front where vmap_tgt_front: (* undefined for negatives only *)
+			"vmap_tgt_front = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := True) else f) ?front vmap_tgt"
+			by blast
+
+		find_theorems "fun_upd"
+		thm "fun_upd_other"
+		thm "set_fold_ident_upd"
+
+		have "\<forall>l \<in> set (tl (rev ?s)). ident l \<notin> idset c"
+			using assms unfolding idset_def apply auto
+			by (smt butlast_rev idset_def in_set_butlastD mem_Collect_eq set_rev stock_fresh)
+		moreover have "set ?front \<subseteq> set (tl (rev ?s))" and "set ?rear \<subseteq> set (tl (rev ?s))"
+			by (meson set_take_subset, meson set_drop_subset)
+		ultimately have front_ident: "\<forall>l \<in> set ?front. ident l \<notin> idset c" and rear_ident: "\<forall>l \<in> set ?rear. ident l \<notin> idset c"
+			by blast+
+
+		have "ident tgt \<in> idset c"
+			using tgt1 unfolding idset_def by auto
+		hence "\<forall>l \<in> set ?front. ident l \<noteq> ident tgt"
+			using front_ident by metis
+		hence "(fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := True) else f) ?front vmap_tgt) (ident tgt) = vmap_tgt (ident tgt)"
+			by (rule set_fold_ident_upd)
+		hence "vmap_tgt_front (ident tgt) = vmap_tgt (ident tgt)"
+			using vmap_tgt_front by simp
+		hence vmap_tgt_front_carry: "(vmap_tgt_front\<up>) tgt"
+			using vmap_tgt_carry lift_def by (smt ident.elims lit.simps(5) lit.simps(6))
+
+		then obtain vmap_new where vmap_new: (* undefined for positives only *)
+			"vmap_new = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) ?rear vmap_tgt_front"
+			by blast
+
+		have "ident tgt \<in> idset c"
+			using tgt1 unfolding idset_def by auto
+		hence "\<forall>l \<in> set ?rear. ident l \<noteq> ident tgt"
+			using rear_ident by metis
+		hence "(fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) ?rear vmap_tgt_front) (ident tgt) = vmap_tgt_front (ident tgt)"
+			by (rule set_fold_ident_upd)
+		hence "vmap_new (ident tgt) = vmap_tgt_front (ident tgt)"
+			using vmap_new by simp
+		hence vmap_new_lift_tgt: "(vmap_new\<up>) tgt"
+			using vmap_tgt_front_carry lift_def by (smt ident.elims lit.simps(5) lit.simps(6))
+
+		fix c'
+		assume c': "c' \<in> set (fst (refc c vars) @ xs)"
+
+		then consider (update) "c' \<in> set (fst (refc c vars))"
+			| (rest) "c' \<in> set xs"
+			by fastforce
+		hence "\<exists>l \<in> c'. (vmap_new\<up>) l"
+		proof cases
+			case update
+
+			then consider (tgt) "c' = fst (refc c vars) ! i"
+				| (front) "\<exists>j. j < i \<and> c' = fst (refc c vars) ! j"
+				| (rear) "\<exists>j. j > i \<and> j < length (fst (refc c vars)) \<and> c' = fst (refc c vars) ! j"
+				by (metis in_set_conv_nth nat_neq_iff)
+			thus ?thesis
+			proof cases
+				case tgt
+				thus ?thesis using vmap_new_lift_tgt i by blast
+			next
+				case front
+				then show ?thesis sorry
+			next
+				case rear
+				then show ?thesis sorry
+			qed
+
+			then show ?thesis sorry
+		next
+			case rest
+			then show ?thesis sorry
+		qed
+
+
+		hence "\<forall>i < length (fst (refc c vars)). \<exists>l \<in> fst (refc c vars) ! i. (vmap_new\<up>) l"
 			
 		(* 
 			stock: n1 p1 n2 p2 ... nx px
