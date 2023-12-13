@@ -114,10 +114,16 @@ lemma stock_disj:
 	by (metis Int_emptyI)
 
 lemma stock_uniq:
-	assumes "finite vars" "s = stock n vars" "i < length s - 1" "j < length s - 1" "i \<noteq> j"
+	assumes "finite vars" "s = stock n vars" "i < length s" "j < length s" "i \<noteq> j"
 	shows "s ! i \<noteq> s ! j"
 	using assms
 	by (simp add: card_distinct nth_eq_iff_index_eq stock_len_card)
+
+lemma tl_rev_stock_uniq:
+	assumes "finite vars" "i < length (stock n vars) - 1" "j < length (stock n vars) - 1" "i \<noteq> j"
+	shows "tl (rev (stock n vars)) ! i \<noteq> tl (rev (stock n vars)) ! j"
+	using assms
+	by (simp add: card_distinct distinct_tl nth_eq_iff_index_eq stock_len_card)
 
 lemma stock_idset:
 	assumes "finite c" "finite vars" "idset c \<subseteq> vars" "f \<in> set (stock n vars)"
@@ -297,6 +303,7 @@ fun splc :: "('a :: fresh) lit set \<Rightarrow> 'a lit list \<Rightarrow> 'a li
 			let p = pop c in
 				{n_prev, fst p, p_cur} # splc (snd p) xs init
 		)"
+thm splc.induct
 
 definition refc :: "('a :: fresh) lit set \<Rightarrow> 'a set \<Rightarrow> 'a lit set list * 'a set"
 	where "refc c vars = (
@@ -1334,6 +1341,140 @@ next
 	qed
 qed
 
+
+lemma splc_clause_uniq:
+	assumes "finite c" "s = stock (card c - 3) vars" "s' = tl (rev s)" "length s' = 2 * (card c - 3) - 1"
+					"l = splc c s' init" "card c \<ge> 4" "finite vars" "init \<notin> set s' \<union> c" "set s' \<inter> c = {}"
+	shows "\<forall>i j. i < length l \<and> j < length l \<and> i \<noteq> j \<longrightarrow> l ! i \<noteq> l ! j"
+	using assms
+proof (induction "card c - 3" arbitrary: c l s s' vars init)
+  case 0
+  thus ?case by simp
+next
+  case (Suc n)
+  consider (eq4) "card c = 4"
+  	| (gt4) "card c > 4"
+  	using Suc.prems by arith
+  thus ?case
+  proof cases
+  	case eq4
+		let ?p = "pop c"
+		let ?q = "pop (snd ?p)"
+
+  	have eq4expand: "splc c s' init = {fst ?p, fst ?q, init} # insert (hd s') (snd ?q) # []"
+  		using eq4 Suc.prems(4)
+  		by (metis (no_types, lifting) One_nat_def Suc_length_conv add_diff_cancel_right' diff_numeral_Suc length_0_conv list.sel(1) mult_2 numeral_3_eq_3 plus_1_eq_Suc pred_numeral_simps(2) semiring_norm(26) semiring_norm(27) splc.simps(2))
+
+  	hence "l ! 0 = hd l"
+  		by (smt (verit) Suc.prems(5) list.sel(1) nth_Cons_0 splc.elims)
+  	moreover have "l ! 1 = hd (tl l)"
+  		using eq4expand Suc.prems by simp
+  	moreover have "hd l \<inter> \<Union>(set (tl l)) = {}"
+			apply (rule splc_hd_tl_disj[where ?c = c and ?vars = vars and ?s = "s" and ?s' = "s'" and ?init = init])
+			using Suc.prems by blast+
+		ultimately show ?thesis
+			using eq4expand Suc.prems
+			by (metis One_nat_def Union_disjoint inf.idem inf_commute insert_not_empty length_Cons less_Suc_eq less_one list.sel(1) list.sel(3) list.set_intros(1) list.size(3))
+  next
+  	case gt4
+  	thus ?thesis
+  	proof (intro allI impI)
+  		fix i j
+			assume a: "i < length l \<and> j < length l \<and> i \<noteq> j"
+
+			consider (nil_i) "i = 0"
+				| (nil_j) "j = 0"
+				| (gt0) "i > 0 \<and> j > 0"
+				by arith
+			thus "l ! i \<noteq> l ! j"
+			proof cases
+				case nil_i
+				hence j: "j > 0"
+					using a by simp
+
+				have "hd l \<inter> \<Union>(set (tl l)) = {}"
+					apply (rule splc_hd_tl_disj[where ?c = c and ?vars = vars and ?s = "s" and ?s' = "s'" and ?init = init])
+					using Suc.prems by blast+
+				moreover have "l ! j \<in> set (tl l)"
+					using a j
+					by (metis Suc_pred diff_Suc_eq_diff_pred length_tl nth_mem nth_tl zero_less_diff)
+				moreover have "l ! i = hd l"
+					using nil_i a
+					by (simp add: hd_conv_nth)
+				ultimately show ?thesis
+					using Suc.prems Suc.hyps
+					by (smt (verit) One_nat_def Suc_pred Sup_upper inf.absorb2 inf_commute insert_not_empty list.sel(1) list.size(3) nat_0_less_mult_iff nat_mult_eq_1_iff one_eq_numeral_iff semiring_norm(83) splc.elims zero_less_Suc zero_less_numeral)
+			next
+				case nil_j
+				hence i: "i > 0"
+					using a by simp
+
+				have "hd l \<inter> \<Union>(set (tl l)) = {}"
+					apply (rule splc_hd_tl_disj[where ?c = c and ?vars = vars and ?s = "s" and ?s' = "s'" and ?init = init])
+					using Suc.prems by blast+
+				moreover have "l ! i \<in> set (tl l)"
+					using a i
+					by (metis Suc_pred diff_Suc_eq_diff_pred length_tl nth_mem nth_tl zero_less_diff)
+				moreover have "l ! j = hd l"
+					using nil_j a
+					by (simp add: hd_conv_nth)
+				ultimately show ?thesis
+					using Suc.prems Suc.hyps
+					by (smt (verit) One_nat_def Suc_pred Sup_upper inf.absorb2 inf_commute insert_not_empty list.sel(1) list.size(3) nat_0_less_mult_iff nat_mult_eq_1_iff one_eq_numeral_iff semiring_norm(83) splc.elims zero_less_Suc zero_less_numeral)
+			next
+				case gt0
+				let ?p = "pop c"
+				let ?t = "fst ?p"
+				let ?rest = "snd ?p"
+			
+				have c: "c = insert ?t ?rest"
+					using pop_ins Suc.prems Suc.hyps
+					by (metis card.empty diff_le_self less_eq_nat.simps(1) not_less_eq_eq)
+			
+				have suc_card: "Suc (card ?rest) = card c"
+					using Suc.prems(1) c pop_card by auto
+		
+				let ?n_prev = "hd s'"
+				let ?p_cur = "hd (tl s')"
+				let ?xs = "tl (tl s')"
+		
+				have expand: "splc c s' init = {?n_prev, fst ?p, ?p_cur} # splc (snd ?p) ?xs init"
+					using gt4 Suc.prems splc_gt4 by metis
+			
+				hence setexpand: "set (splc c s' init) = set ({?n_prev, fst ?p, ?p_cur} # splc (snd ?p) ?xs init)"
+					by simp
+		
+		
+				have tl_tl_set: "set (tl (tl s')) \<subseteq> set s'"
+					by (metis Nil_tl list.set_sel(2) subsetI)
+				moreover have snd_p_set: "snd (pop c) \<subseteq> c"
+					using c by auto
+				ultimately have disj: "set (tl (tl s')) \<inter> snd (pop c) = {}"
+					using Suc.prems(9) by auto
+		
+				hence n: "n = card ?rest - 3"
+					using Suc.hyps suc_card by arith
+				hence "\<forall>i j. i < length (tl l) \<and> j < length (tl l) \<and> i \<noteq> j \<longrightarrow> (tl l) ! i \<noteq> (tl l) ! j"
+					apply (rule Suc.hyps(1)[where ?vars = vars and ?s = "butlast (butlast s)" and ?s' = "tl (tl s')" and ?init = init])
+					using Suc.prems(1) c finite_insert apply metis
+					using Suc.prems(2) suc_card Suc.hyps stock_butlast apply (metis diff_Suc_1 diff_commute)
+					using Suc.prems(3) apply (metis butlast_rev rev_rev_ident)
+					using Suc.prems(4) suc_card apply (metis Suc_1 diff_Suc_1 diff_commute diff_diff_left diff_mult_distrib2 length_tl mult.right_neutral plus_1_eq_Suc)
+					using Suc.prems(5) expand apply simp
+					using gt4 suc_card apply simp
+					using Suc.prems(7) apply simp
+					using Suc.prems(8) c apply (metis Nil_tl Un_iff insert_iff list.set_sel(2))
+					using disj apply simp
+					done
+
+				thus ?thesis using gt0 a
+					by (smt Suc_lessD diff_Suc_eq_diff_pred gr0_conv_Suc length_tl nth_tl zero_less_diff)
+			qed
+		qed
+  qed
+qed
+
+
 (*
 lemma splc_lit_uniq:
 	assumes "finite c" "s = stock (card c - 3) vars" "s' = tl (rev s)" "length s' = 2 * (card c - 3) - 1"
@@ -1696,6 +1837,10 @@ lemma rev_stock_pair: "finite vars \<Longrightarrow> n > 0 \<Longrightarrow> eve
 lemma tl_rev_stock_pair: "finite vars \<Longrightarrow> n > 0 \<Longrightarrow> odd m \<Longrightarrow> Suc m < length (tl (stock n vars)) \<Longrightarrow> tl (rev (stock n vars)) ! m = Pos x \<Longrightarrow> tl (rev (stock n vars)) ! Suc m = Neg x"
 	by (simp add: nth_tl rev_stock_pair)
 
+lemma tl_rev_stock_pair_alt: "finite vars \<Longrightarrow> n > 0 \<Longrightarrow> odd m \<Longrightarrow> Suc m < length (tl (stock n vars)) \<Longrightarrow> tl (rev (stock n vars)) ! Suc m = Neg x \<Longrightarrow> tl (rev (stock n vars)) ! m = Pos x"
+	using tl_rev_stock_odd_pos tl_rev_stock_pair
+	by (metis Suc_lessD ident.simps(2))
+
 lemma stock_neq_ident: "finite vars \<Longrightarrow> n > 0 \<Longrightarrow> odd m \<Longrightarrow> Suc m < length (stock n vars) \<Longrightarrow> ident (stock n vars ! m) \<noteq> ident (stock n vars ! Suc m)"
 	apply (induction n vars arbitrary: m rule: stock.induct)
 	 apply (auto simp add: Let_def)
@@ -1708,6 +1853,26 @@ lemma rev_stock_neq_ident: "finite vars \<Longrightarrow> n > 0 \<Longrightarrow
 lemma tl_rev_stock_neq_ident: "finite vars \<Longrightarrow> n > 0 \<Longrightarrow> even m \<Longrightarrow> Suc m < length (tl (stock n vars)) \<Longrightarrow> ident (tl (rev (stock n vars)) ! m) \<noteq> ident (tl (rev (stock n vars)) ! Suc m)"
 	apply (simp add: nth_tl rev_nth)
 	by (smt (verit) One_nat_def Suc_diff_Suc diff_Suc_eq_diff_pred diff_Suc_less dvd_diff_nat even_Suc stock_gt0 stock_length_even stock_neq_ident)
+
+
+lemma stock_suc_last:
+	assumes "finite vars"
+	shows "last (stock (Suc n) vars) \<notin> set (stock n vars)"
+	using assms
+	apply (induction n vars rule: stock.induct)
+	 apply (auto simp add: Let_def)
+	  apply (metis finite.insertI fresh_notIn insertI1)
+	 apply (smt (verit, ccfv_SIG) Int_insert_right_if1 finite.insertI ident.simps(2) idset_map_ident insert_commute insert_not_empty last_in_set last_map list.map_disc_iff stock_disj)
+	by (metis finite.insertI ident.simps(1) idset_map_ident insert_subset last_in_set last_map list.map_disc_iff stock_fresh subset_insertI)
+
+lemma stock_suc_butlast:
+	assumes "finite vars"
+	shows "last (butlast (stock (Suc n) vars)) \<notin> set (stock n vars)"
+	using assms
+	apply (induction n vars rule: stock.induct)
+	 apply (auto simp add: Let_def)
+	  apply (metis finite.insertI fresh_notIn insertI1)
+	by (metis finite.insertI idset_iff in_set_butlastD insert_subset last_in_set stock_fresh subset_insertI)+
 
 lemma "length l > 2 \<Longrightarrow> hd (tl (tl l)) = l ! 2"
 	apply (induction l)
@@ -2371,6 +2536,149 @@ next
 qed
 
 
+lemma splc_aux_clause_nth:
+	assumes "finite c" "s = stock (card c - 3) vars" "s' = tl (rev s)" "length s' = 2 * (card c - 3) - 1"
+					"l = splc c s' init" "card c \<ge> 4" "finite vars" "init \<notin> set s' \<union> c" "set s' \<inter> c = {}"
+					"\<exists>y. init = Pos y" "idset c \<subseteq> vars" "c' = l ! i" "i < length l - 2"
+	shows "\<exists>x y. Neg y = s' ! (2*i) \<and> Pos x = s' ! Suc (2*i) \<and> Neg y \<in> c' \<and> Pos x \<in> c' \<and> y \<notin> vars \<and> x \<notin> vars"
+	using assms
+proof (induction "card c - 3" arbitrary: c c' l s s' vars init i)
+  case 0
+  thus ?case by simp
+next
+  case (Suc n)
+  consider (eq4) "card c = 4"
+  	| (gt4) "card c > 4"
+  	using Suc.prems by arith
+	thus ?case
+	proof cases
+		case eq4
+		thus ?thesis
+			using Suc.prems by (auto simp add: Let_def)
+	next
+		case gt4
+
+		let ?p = "pop c"
+		let ?t = "fst ?p"
+		let ?rest = "snd ?p"
+	
+		have c: "c = insert ?t ?rest"
+			using pop_ins Suc.prems Suc.hyps
+			by (metis card.empty diff_le_self less_eq_nat.simps(1) not_less_eq_eq)
+	
+		have suc_card: "Suc (card ?rest) = card c"
+			using Suc.prems(1) c pop_card by auto
+
+		let ?n_prev = "hd s'"
+		let ?p_cur = "hd (tl s')"
+		let ?xs = "tl (tl s')"
+
+		have expand: "l = {?n_prev, fst ?p, ?p_cur} # splc (snd ?p) ?xs init"
+			using gt4 Suc.prems splc_gt4 by metis
+	
+		hence setexpand: "set l = set ({?n_prev, fst ?p, ?p_cur} # splc (snd ?p) ?xs init)"
+			by simp
+
+		consider (hd) "i = 0"
+			| (tl) "i > 0"
+			by arith
+		thus ?thesis
+		proof cases
+			case hd
+			hence c'_hd: "c' = hd l"
+				using Suc.prems(12) expand by simp
+
+			hence c': "c' = {?n_prev, fst ?p, ?p_cur}"
+				using expand by simp
+
+			
+			find_theorems "hd ?xs = ?xs ! 0"
+			have nil: "s' \<noteq> []"
+				using Suc.prems by fastforce
+			hence n_prev: "?n_prev = s' ! 0"
+				by (rule hd_conv_nth)
+			thm tl_rev_stock_even_neg
+			moreover have "\<exists>y. tl (rev (stock (card c - 3) vars)) ! 0 = Neg y"
+				apply (rule tl_rev_stock_even_neg)
+				using Suc.prems gt4 by auto
+			ultimately have "\<exists>y. Neg y = s' ! (2 * i) \<and> Neg y \<in> c'"
+				using Suc.prems(2) Suc.prems(3) hd c' by force
+
+			then obtain y where neg_y: "Neg y = s' ! (2 * i) \<and> Neg y \<in> c'"
+				by blast
+			hence "y \<in> idset (set s)"
+				using idset_iff Suc.prems hd nil
+				by (metis Nil_tl Suc.prems(3) list.set_sel(1) list.set_sel(2) mult_0_right n_prev set_rev)
+			hence y_vars: "y \<notin> vars"
+				using stock_disj Suc.prems by blast
+
+			hence p_cur: "?p_cur = s' ! 1"
+				using Suc.prems expand hd
+				by (metis One_nat_def Suc_1 hd_conv_nth length_Cons length_greater_0_conv list.sel(2) list.size(3) nat_less_le nth_tl splc.simps(1) zero_less_diff)
+
+			thm tl_rev_stock_odd_pos
+			moreover have "\<exists>x. tl (rev (stock (card c - 3) vars)) ! 1 = Pos x"
+				apply (rule tl_rev_stock_odd_pos)
+				using Suc.prems gt4 by auto
+			ultimately have "\<exists>x. Pos x = s' ! Suc (2 * i) \<and> Pos x \<in> c'"
+				using Suc.prems(2) Suc.prems(3) hd c' by force
+
+			then obtain x where pos_x: "Pos x = s' ! Suc (2 * i) \<and> Pos x \<in> c'"
+				by blast
+			hence "x \<in> idset (set s)"
+				using idset_iff Suc.hyps(2) gt4 hd nil Suc.prems(3) Suc.prems(4)
+				by (smt Nitpick.size_list_simp(2) One_nat_def Suc_1 Suc_eq_plus1 add_diff_inverse_nat diff_is_0_eq length_tl list.set_sel(2) mult_0_right mult_eq_self_implies_10 nat_less_le nth_mem numeral_eq_Suc pred_numeral_simps(2) semiring_norm(26) semiring_norm(27) set_rev zero_less_Suc zero_less_diff)
+			hence x_vars: "x \<notin> vars"
+				using stock_disj Suc.prems by blast
+
+			thus ?thesis using pos_x neg_y x_vars y_vars by blast
+		next
+			case tl
+			hence c': "c' \<in> set (tl l)"
+				using Suc.prems(12) Suc.prems(13) expand by simp
+	
+			have tl_tl_set: "set (tl (tl s')) \<subseteq> set s'"
+				by (metis Nil_tl list.set_sel(2) subsetI)
+			moreover have snd_p_set: "snd (pop c) \<subseteq> c"
+				using c by auto
+			ultimately have disj: "set (tl (tl s')) \<inter> snd (pop c) = {}"
+				using Suc.prems(9) by auto
+
+
+			have n: "n = card ?rest - 3"
+				using Suc.hyps suc_card by arith
+
+			thm Suc.hyps
+			hence "\<exists>x y. Neg y = tl (tl s') ! (2 * (i-1)) \<and> Pos x = tl (tl s') ! Suc (2 * (i-1)) \<and> Neg y \<in> c' \<and> Pos x \<in> c' \<and> y \<notin> vars \<and> x \<notin> vars"
+				apply (rule Suc.hyps(1)[where ?c' = c' and ?vars = vars and ?s = "butlast (butlast s)" and ?s' = "tl (tl s')" and ?init = init])
+				using Suc.prems(1) c finite_insert apply metis
+				using Suc.prems(2) suc_card Suc.hyps stock_butlast apply (metis diff_Suc_1 diff_commute)
+				using Suc.prems(3) apply (metis butlast_rev rev_rev_ident)
+				using Suc.prems(4) suc_card apply (metis Suc_1 diff_Suc_1 diff_commute diff_diff_left diff_mult_distrib2 length_tl mult.right_neutral plus_1_eq_Suc)
+				using expand apply simp
+				using gt4 suc_card apply simp
+				using Suc.prems(7) apply simp
+				using Suc.prems(8) snd_p_set tl_tl_set apply blast
+				using disj apply simp
+				using Suc.prems(10) apply simp
+				using Suc.prems(11) idset_def apply (smt mem_Collect_eq snd_p_set subset_iff)
+				using Suc.prems(12) expand tl apply simp
+				using Suc.prems(13) expand tl apply simp
+				done
+
+			hence "\<exists>x y. Neg y = tl (tl s') ! (2*i - 2) \<and> Pos x = tl (tl s') ! Suc (2*i - 2) \<and> Neg y \<in> c' \<and> Pos x \<in> c' \<and> y \<notin> vars \<and> x \<notin> vars"
+				by (simp add: diff_mult_distrib2)
+			hence "\<exists>x y. Neg y = tl s' ! (2*i - 1) \<and> Pos x = tl s' ! Suc (2*i - 1) \<and> Neg y \<in> c' \<and> Pos x \<in> c' \<and> y \<notin> vars \<and> x \<notin> vars"
+				using Suc.prems Suc.hyps(2) gt4 n suc_card tl
+				by (smt (verit) Nitpick.size_list_simp(2) Suc_1 Suc_diff_Suc diff_Suc_1 diff_is_0_eq' dvd_def hd_Cons_tl linordered_nonzero_semiring_class.zero_le_one mult_eq_self_implies_10 nat_less_le not_less_eq_eq nth_Cons_Suc numeral_eq_Suc odd_one one_le_mult_iff pred_numeral_simps(2) semiring_norm(26) semiring_norm(27))
+			hence "\<exists>x y. Neg y = s' ! (2*i) \<and> Pos x = s' ! Suc (2*i) \<and> Neg y \<in> c' \<and> Pos x \<in> c' \<and> y \<notin> vars \<and> x \<notin> vars"
+				using Suc.prems Suc.hyps(2) tl
+				by (metis One_nat_def Suc_1 Suc_diff_Suc diff_zero dvd_def hd_Cons_tl list.size(3) mult_pos_pos nth_Cons_Suc odd_one zero_less_Suc)
+			thus ?thesis .
+		qed
+	qed
+qed
+
 lemma last_butlast_tl: "length l \<ge> 3 \<Longrightarrow> last (butlast (tl l)) = last (butlast l)"
 	apply (induction l)
 	 apply auto
@@ -2513,7 +2821,7 @@ qed
 lemma splc_aux_clause_last:
 	assumes "finite c" "s = stock (card c - 3) vars" "s' = tl (rev s)" "length s' = 2 * (card c - 3) - 1"
 					"l = splc c s' init" "card c \<ge> 4" "finite vars" "init \<notin> set s' \<union> c" "set s' \<inter> c = {}" "\<exists>y. init = Pos y"
-	shows "\<exists>i. Neg i \<in> last l"
+	shows "\<exists>i. Neg i \<in> last l \<and> hd s = Neg i"
 	using assms
 proof (induction "card c - 3" arbitrary: c l s s' vars init)
   case 0
@@ -2564,7 +2872,7 @@ next
 		have n: "n = card ?rest - 3"
 			using Suc.hyps suc_card by arith
 
-		hence "\<exists>i. Neg i \<in> last (tl l)"
+		hence "\<exists>i. Neg i \<in> last (tl l) \<and> hd (butlast (butlast s)) = Neg i"
 			apply (rule Suc.hyps(1)[where ?vars = vars and ?s = "butlast (butlast s)" and ?s' = "tl (tl s')" and ?init = init])
 			using Suc.prems(1) c finite_insert apply metis
 			using Suc.prems(2) suc_card Suc.hyps stock_butlast apply (metis diff_Suc_1 diff_commute)
@@ -2582,7 +2890,8 @@ next
 			using Suc.prems Suc.hyps splc_length
 			by (metis Nitpick.size_list_simp(2) One_nat_def Suc_1 Suc_eq_plus1 last_tl le_imp_less_Suc less_irrefl_nat numeral_3_eq_3 numeral_eq_Suc pred_numeral_simps(2) semiring_norm(26) semiring_norm(27))
 
-		ultimately show ?thesis using Suc.prems(10) by simp
+		ultimately show ?thesis using Suc.prems Suc.hyps gt4 hd_stock_neg n suc_card stock_butlast
+			by (smt (verit, ccfv_threshold) diff_Suc_1 less_Suc_eq less_trans_Suc numeral_eq_Suc pred_numeral_simps(2) semiring_norm(26) semiring_norm(27) zero_less_diff)
 	qed
 qed
 
@@ -2666,7 +2975,7 @@ lemma splc_init_neighbour:
 	using assms
 proof (induction "card c - 3" arbitrary: c l s s' vars init)
   case 0
-  thus?case by simp
+  thus ?case by simp
 next
   case (Suc n)
   consider (eq5) "card c = 5"
@@ -2950,6 +3259,7 @@ next
 	qed
 qed
 
+
 lemma simple: "i < length l \<Longrightarrow> l ! i \<in> set l"
 	by (rule nth_mem)
 
@@ -2965,10 +3275,509 @@ lemma "(f\<up>) (Pos v) \<Longrightarrow> a \<noteq> v \<Longrightarrow> ((fun_u
 value "take 2 [0::nat, 1, 2]"
 value "drop 2 [0::nat, 1, 2]"
 
-lemma set_fold_ident_upd: "\<forall>l \<in> set xs. ident l \<noteq> ident t \<Longrightarrow> (fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := a) else f) xs f) (ident t) = f (ident t)"
+lemma set_fold_ident_upd: "\<forall>l \<in> set xs. ident l \<noteq> ident t \<Longrightarrow> (fold (\<lambda>x f. f(ident x := a)) xs f) (ident t) = f (ident t)"
 	by (induction xs arbitrary: a t f) auto
 
-lemma checkpoint:
+lemma in_set_fold_upd: "x \<in> set xs \<Longrightarrow> (fold (\<lambda>x f. f(ident x := True)) xs f) (ident x)"
+	by (induction xs arbitrary: x f) (auto, metis fun_upd_same set_fold_ident_upd)
+
+lemma set_foldr_ident_upd: "\<forall>l \<in> set xs. ident l \<noteq> ident t \<Longrightarrow> (foldr (\<lambda>x f. if f (ident x) = undefined then f(ident x := a) else f) xs f) (ident t) = f (ident t)"
+	by (induction xs arbitrary: a t f) auto
+
+lemma nth_set_take: "\<lbrakk> j < i; i \<le> length xs \<rbrakk> \<Longrightarrow> xs ! j \<in> set (take i xs)"
+	by (metis in_set_conv_nth length_take min_less_iff_conj nth_take order_less_le_trans)
+
+
+lemma
+	assumes "vmap = (\<lambda>x. undefined)" "finite vars"
+					"vmap_new = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) (stock n vars) vmap"
+	shows "\<forall>x. Pos x \<in> set (stock n vars) \<longrightarrow> vmap_new x"
+	using assms
+proof (induction n arbitrary: vars vmap vmap_new)
+  case 0
+  thus ?case by simp
+next
+  case (Suc n)
+
+  hence "butlast (butlast (stock (Suc n) vars)) = stock n vars"
+  	by (metis diff_Suc_1 stock_butlast)
+  hence stock_extend: "stock (Suc n) vars = stock n vars @ [last (butlast (stock (Suc n) vars)), last (stock (Suc n) vars)]"
+  	by (metis (no_types, lifting) append.assoc append_butlast_last_id butlast.simps(2) last.simps less_numeral_extra(3) list.distinct(1) stock.elims zero_less_Suc)
+
+  have "\<exists>x. x \<notin> vars \<and> last (stock (Suc n) vars) = Pos x"
+  	by (rule last_stock_pos) (auto simp add: Suc.prems)
+  then obtain x where x: "last (stock (Suc n) vars) = Pos x"
+  	by blast
+
+  have "\<exists>y. stock (Suc n) vars ! (length (stock (Suc n) vars) - 2) = Neg y"
+  	apply (rule stock_even_neg)
+  	using Suc.prems apply simp
+  	using Suc.prems apply simp
+  	using stock_length_even Suc.prems dvd_minus_self apply blast
+  	using Suc.prems stock_gt0 apply (meson diff_less zero_less_Suc zero_less_numeral)
+  	done
+  moreover have nth_last_butlast: "stock (Suc n) vars ! (length (stock (Suc n) vars) - 2) = last (butlast (stock (Suc n) vars))"
+  	using Suc.prems stock_gt0 stock_length_even
+  	by (metis (no_types, lifting) One_nat_def Suc_1 Suc_pred diff_Suc_eq_diff_pred diff_less last_conv_nth length_butlast length_greater_0_conv list.size(3) nth_butlast odd_one zero_less_Suc)
+  ultimately obtain y where y: "last (butlast (stock (Suc n) vars)) = Neg y"
+  	by force
+
+  hence xy: "x = y"
+  	using stock_pair Suc.prems x nth_last_butlast stock_gt0 stock_length_even 
+  	by (smt One_nat_def Suc_1 Suc_diff_Suc diff_less dvd_diff_nat even_numeral last_conv_nth length_0_conv less_Suc0 linorder_neqE_nat lit.inject(1) odd_one zero_less_Suc)
+  hence pos_notin: "Pos x \<notin> set (stock n vars)"
+  	using x stock_suc_last Suc.prems by metis
+  hence neg_notin: "Neg x \<notin> set (stock n vars)"
+  	using y xy stock_suc_butlast Suc.prems by metis
+
+  have "\<forall>x. Pos x \<in> set (stock n vars) \<longrightarrow> fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) (stock n vars) vmap x"
+  	by (rule Suc.IH) (auto simp add: Suc.prems)
+
+  let ?vmap' = "fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) (stock n vars) vmap"
+  have "\<forall>l. l \<in> set (stock n vars) \<longrightarrow> ?vmap' (ident l) = False"
+  	apply (induction n vars rule: stock.induct)
+  	 apply auto
+  	apply (simp add: Let_def split: if_splits)
+
+  have "\<forall>l. l \<notin> set (stock n vars) \<longrightarrow> ?vmap' (ident l) = undefined"
+  	using Suc.prems 
+
+  have "vmap_new = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) [Neg y, Pos x] ?vmap'"
+  	using stock_extend Suc.prems x y by simp
+  hence "vmap_new = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) [Neg x, Pos x] ?vmap'"
+  	using xy by simp
+  moreover have "?vmap' x = undefined"
+  	using pos_notin neg_notin
+  hence "\<not>vmap_new x"
+  	using Suc.prems 
+
+  then show ?case sorry
+qed
+
+lemma 
+	assumes "vmap_new = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) (stock (card (c :: 'a lit set) - 3) vars) vmap"
+					"\<forall>l. l \<in> set (stock (card c - 3) vars) \<longrightarrow> vmap (ident l) = undefined" "l \<in> set (stock (card c - 3) vars)" "l = Pos x"
+	shows "vmap_new x"
+	using assms
+proof (induction "card c - 3" arbitrary: c vars vmap vmap_new l x)
+  case 0
+  thus ?case by simp
+next
+  case (Suc n)
+
+	let ?p = "pop c"
+	let ?t = "fst ?p"
+	let ?rest = "snd ?p"
+
+	have c: "c = insert ?t ?rest"
+		using pop_ins Suc.prems Suc.hyps
+		by (metis card_eq_0_iff diff_0_eq_0 old.nat.distinct(1))
+
+	have suc_card: "Suc (card ?rest) = card c"
+		using Suc.prems Suc.hyps c pop_card
+		by (metis card_eq_0_iff diff_0_eq_0 old.nat.distinct(1))
+
+	have n: "n = card ?rest - 3"
+		using Suc.hyps suc_card by arith
+
+  hence "vmap_new x"
+		apply (rule "Suc.hyps")
+			 prefer 4 apply simp
+		
+
+  then show ?case sorry
+qed
+
+
+lemma vmap_true_pos_lift: "vmap v \<Longrightarrow> l = Pos v \<Longrightarrow> (vmap\<up>) l"
+	unfolding lift_def by simp
+
+lemma vmap_false_neg_lift: "\<not>vmap v \<Longrightarrow> l = Neg v \<Longrightarrow> (vmap\<up>) l"
+	unfolding lift_def by simp
+
+lemma 
+	assumes "finite c" "s = stock (card c - 3) vars" "s' = tl (rev s)" "length s' = 2 * (card c - 3) - 1"
+					"l = splc c s' init" "card c \<ge> 4" "finite vars" "init \<notin> set s' \<union> c" "set s' \<inter> c = {}" "\<exists>y. init = Pos y"
+					"i \<le> length l - 2"
+	shows "\<forall>x \<in> idset (set s'). Neg x \<in> l ! i \<longrightarrow> Neg x = s' ! (2*i)"
+	using assms
+	proof (induction "card c - 3" arbitrary: c l s s' vars init i)
+		case 0
+		thus ?case by simp
+	next
+		case (Suc n)
+		consider (eq4) "card c = 4"
+			| (gt4) "card c > 4"
+			using Suc.prems by arith
+		thus ?case
+		proof cases
+			case eq4
+			thus ?thesis
+				using Suc.prems idset_iff by (fastforce simp add: Let_def)
+		next
+			case gt4
+
+			let ?p = "pop c"
+			let ?t = "fst ?p"
+			let ?rest = "snd ?p"
+		
+			have c: "c = insert ?t ?rest"
+				using pop_ins Suc.prems Suc.hyps
+				by (metis card_eq_0_iff diff_0_eq_0 old.nat.distinct(1))
+		
+			have suc_card: "Suc (card ?rest) = card c"
+				using Suc.prems Suc.hyps c pop_card
+				by (metis card_eq_0_iff diff_0_eq_0 old.nat.distinct(1))
+
+			let ?n_prev = "hd s'"
+			let ?p_cur = "hd (tl s')"
+			let ?xs = "tl (tl s')"
+	
+			have expand: "l = {?n_prev, fst ?p, ?p_cur} # splc (snd ?p) ?xs init"
+				using gt4 Suc.prems splc_gt4 by metis
+		
+			hence setexpand: "set l = set ({?n_prev, fst ?p, ?p_cur} # splc (snd ?p) ?xs init)"
+				by simp
+	
+	
+			have tl_tl_set: "set (tl (tl s')) \<subseteq> set s'"
+				by (metis Nil_tl list.set_sel(2) subsetI)
+			moreover have snd_p_set: "snd (pop c) \<subseteq> c"
+				using c by auto
+			ultimately have disj: "set (tl (tl s')) \<inter> snd (pop c) = {}"
+				using Suc.prems(9) by auto
+
+		
+			have n: "n = card ?rest - 3"
+				using Suc.hyps suc_card by arith
+
+			hence "\<forall>x \<in> idset (set (tl (tl s'))). Neg x \<in> (tl l) ! (i-1) \<longrightarrow> Neg x = (tl (tl s')) ! (2*(i-1))"
+				apply (rule Suc.hyps(1)[where ?vars = vars and ?s = "butlast (butlast s)" and ?s' = "tl (tl s')" and ?init = init])
+				using Suc.prems(1) c finite_insert apply metis
+				using Suc.prems(2) suc_card Suc.hyps stock_butlast apply (metis diff_Suc_1 diff_commute)
+				using Suc.prems(3) apply (metis butlast_rev rev_rev_ident)
+				using Suc.prems(4) suc_card apply (metis Suc_1 diff_Suc_1 diff_commute diff_diff_left diff_mult_distrib2 length_tl mult.right_neutral plus_1_eq_Suc)
+				using Suc.prems(5) expand apply fastforce
+				using gt4 suc_card apply simp
+				using Suc.prems(7) apply simp
+				using Suc.prems(8) snd_p_set tl_tl_set apply blast
+				using disj apply simp
+				using Suc.prems(10) apply simp
+				using Suc.prems(11) apply simp
+				done
+
+			thus ?thesis
+		qed
+	qed
+
+
+
+
+lemma sat_single: "c \<noteq> {} \<Longrightarrow> sat (c # [])"
+	unfolding sat_def models_def 
+	by (metis empty_set ex_in_conv lift_def lit.case_distrib set_ConsD)
+
+lemma sat_tl: "sat expr \<Longrightarrow> sat (tl expr)"
+	unfolding sat_def models_def
+	by (metis list.sel(2) list.set_sel(2))
+
+lemma sat_rev: "sat expr \<Longrightarrow> sat (rev expr)"
+	unfolding sat_def models_def by auto 
+
+lemma sat_butlast: "sat expr \<Longrightarrow> sat (butlast expr)"
+	using sat_tl sat_rev butlast_rev rev_swap by metis
+
+lemma sat_subset: "sat expr \<Longrightarrow> sat (filter P expr)"
+	unfolding sat_def models_def by auto
+
+
+lemma update_preserve_lit: "\<lbrakk> vmap \<Turnstile> expr; vnew \<notin> idset (\<Union>(set expr)); l \<in> \<Union>(set expr) \<rbrakk>
+															\<Longrightarrow> ((fun_upd vmap vnew b)\<up>) l = (vmap\<up>) l"
+	unfolding idset_def apply (auto simp: fun_upd_def lift_def)
+	by (smt (z3) ident.elims lit.simps(5) lit.simps(6))+
+
+lemma update_preserve_sat:
+	assumes "sat expr" "vmap \<Turnstile> expr" "vnew \<notin> idset (\<Union>(set expr))" 
+	shows "(fun_upd vmap vnew b) \<Turnstile> expr"
+	unfolding idset_def sat_def models_def
+proof (intro ballI)
+	fix clause :: "'a lit set"
+	assume clause_in_expr: "clause \<in> set expr"
+
+	obtain lit where "lit \<in> clause" and "(fun_upd vmap vnew b\<up>) lit"
+		by (meson UnionI assms(2) assms(3) clause_in_expr models_def update_preserve_lit)
+
+	thus "\<exists>lit \<in> clause. (vmap(vnew := b)\<up>) lit"
+		by blast
+qed
+
+lemma test__:
+	assumes "\<exists>l \<in> c. (vmap\<up>) l" "finite c" "finite vars" "vars \<subseteq> idset c"
+	shows "\<not> vmap \<Turnstile> fst (refc c vars)"
+	using assms unfolding models_def refc_def
+	oops
+
+
+lemma test_:
+	assumes "vmap \<Turnstile> fst (refc c vars)" "finite c" "finite vars" "vars \<subseteq> idset c"
+	shows "\<exists>l \<in> c. (vmap\<up>) l"
+	using assms
+	oops
+
+lemma test:
+	assumes "vmap \<Turnstile> fst (refc c vars)"
+	shows "vmap \<Turnstile> c # []"
+	using assms unfolding models_def refc_def
+	oops
+
+lemma ex_mid_lift: "(vmap\<up>) (Pos x) \<longleftrightarrow> \<not>(vmap\<up>) (Neg x)"
+	unfolding lift_def by auto
+
+
+lemma "(\<not> vmap \<Turnstile> c # [] \<Longrightarrow> \<not> vmap \<Turnstile> fst (refc c vars)) \<Longrightarrow> \<nexists>vmap. vmap \<Turnstile> c # xs \<Longrightarrow> \<nexists>vmap. vmap \<Turnstile> fst (refc c vars) @ xs"
+	apply (induction xs arbitrary: vmap c vars)
+	unfolding refc_def apply (auto simp add: Let_def split: if_splits)
+	 apply (metis card.empty sat_def sat_single zero_le)
+
+lemma inv_test:
+	assumes ""
+
+
+thm splc.induct
+lemma inv:
+	assumes "\<not> sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
+	shows "\<not> sat (fst (refc c vars) @ xs)"
+	using assms unfolding sat_def models_def
+proof -
+(*
+	assume "\<not>\<not>sat (fst (refc c vars) @ xs)"
+
+	hence "\<exists>vmap. vmap \<Turnstile> (fst (refc c vars)) @ xs"
+		unfolding sat_def by simp
+
+	hence "\<exists>vmap. \<forall>c \<in> set ((fst (refc c vars)) @ xs). \<exists>l \<in> c. (vmap\<up>) l"
+		unfolding models_def by simp
+*)
+	have "\<nexists>vmap. vmap \<Turnstile> c # xs"
+		using assms(1) unfolding sat_def by simp
+	hence "\<nexists>vmap. \<forall>c' \<in> set (c # xs). \<exists>l \<in> c'. (vmap\<up>) l"
+		unfolding models_def by simp
+	hence "\<forall>vmap. \<not> (\<forall>c' \<in> set (c # xs). \<exists>l \<in> c'. (vmap\<up>) l)"
+		by simp
+	hence "\<forall>vmap. \<exists>c' \<in> set (c # xs). \<not> (\<exists>l \<in> c'. (vmap\<up>) l)"
+		by simp
+	hence a: "\<forall>vmap. \<exists>c' \<in> set (c # xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l"
+		by simp
+
+	fix vmap
+	have "(\<forall>l \<in> c. \<not> (vmap\<up>) l) \<or> (\<exists>c' \<in> set xs. \<forall>l \<in> c'. \<not> (vmap\<up>) l)"
+		using a by simp
+	then consider (hd) "(\<forall>l \<in> c. \<not> (vmap\<up>) l)"
+		| (tl) "(\<exists>c' \<in> set xs. \<forall>l \<in> c'. \<not> (vmap\<up>) l)"
+		by blast
+	hence "\<exists>c' \<in> set (fst (refc c vars) @ xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l"
+	proof cases
+		case hd
+		thus ?thesis
+		proof -
+			assume "\<forall>c' \<in> set (fst (refc c vars)). \<exists>l \<in> c'. (vmap\<up>) l"
+
+			have c1: "last (butlast (fst (refc c vars))) \<in> set (fst (refc c vars))"
+				unfolding refc_def using assms apply (auto simp add: Let_def split: if_splits)
+				using splc_length stock_length
+				by (smt One_nat_def Suc_1 Suc_diff_le add_diff_cancel_left' add_is_0 diff_Suc_Suc diff_commute in_set_butlastD last_in_set length_butlast length_rev length_tl list.size(3) numeral_3_eq_3 numeral_eq_Suc plus_1_eq_Suc pred_numeral_simps(2) semiring_norm(26) semiring_norm(27) zero_neq_one)
+
+
+			have aux1: "set (tl (rev (stock (card c - 3) vars))) \<inter> c = {}"
+				apply (rule refc_stock_clause_disj)
+				unfolding refc_def apply (simp add: Let_def split: if_splits)
+				using assms apply simp
+				using assms apply simp
+				using assms idset_iff apply (meson UnionI list.set_intros(1) subset_iff)
+				done
+		
+			have aux2: "last (stock (card c - 3) vars) \<notin> set (tl (rev (stock (card c - 3) vars))) \<union> c"
+				apply (rule refc_init_uniq)
+				unfolding refc_def using assms apply (simp add: Let_def split: if_splits)
+				using assms apply simp
+				using assms apply simp
+				using assms idset_iff apply (meson UnionI list.set_intros(1) subset_iff)
+				done
+
+			have aux3: "card (last (butlast (fst (refc c vars)))) = 3"
+				unfolding refc_def using assms(5) apply (auto simp add: Let_def split: if_splits)
+				apply (rule splc_card_3[of c "stock (card c - 3) vars" vars "tl (rev (stock (card c - 3) vars))" _ "last (stock (card c - 3) vars)"])
+				prefer 5 using c1 refc_def stock_le3 apply (metis (no_types, lifting) Nil_is_rev_conv fst_conv list.distinct(1) splc.elims tl_Nil)
+				using assms stock_length aux1 aux2 apply fastforce+
+				done
+
+			thm last_stock_pos
+			have aux4: "\<exists>v. v \<notin> vars \<and> last (stock (card c - 3) vars) = Pos v"
+				apply (rule last_stock_pos)
+				using assms by simp+
+
+			thm splc_aux_clause_first
+			have "\<exists>v. Pos v \<in> last (butlast (fst (refc c vars))) \<and> last (stock (card c - 3) vars) = Pos v"
+				apply (rule splc_aux_clause_first[of c "stock (card c - 3) vars" vars "tl (rev (stock (card c - 3) vars))" _ "last (stock (card c - 3) vars)"])
+				unfolding refc_def using assms(5) apply (auto simp add: Let_def split: if_splits)
+				using assms stock_length aux1 aux2 aux4 apply fastforce+
+				done
+
+
+
+
+		hence "\<exists>subc \<in> set (fst (refc c vars)). \<forall>l \<in> subc. \<not> (vmap\<up>) l"
+
+			oops
+
+		proof (induction "card c - 3" arbitrary: c vars)
+			case 0
+			thus ?case
+				unfolding refc_def by (auto simp add: Let_def split: if_splits)
+		next
+			case (Suc n)
+			consider (eq4) "card c = 4"
+				| (gt4) "card c > 4"
+				using Suc.hyps by arith
+			thus ?case
+			proof cases
+				case eq4
+
+				let ?p = "pop c"
+				let ?q = "pop (snd ?p)"
+
+				let ?init = "last (stock (card c - 3) vars)"
+				let ?other = "(hd (tl (rev (stock (card c - 3) vars))))"
+		
+				have eq4expand: "fst (refc c vars) = {fst ?p, fst ?q, last (stock (card c - 3) vars)} # insert (hd (tl (rev (stock (card c - 3) vars)))) (snd ?q) # []"
+					using eq4 Suc.prems unfolding refc_def
+					by (auto simp add: Let_def split: if_splits)
+
+				have fst_p: "fst ?p \<in> c"
+					using pop_isin eq4
+					by (metis card.empty zero_neq_numeral)
+				have fst_q: "fst ?q \<in> c"
+					using assms pop_isin pop_card pop_ins eq4
+					by (metis One_nat_def card.empty card_gt_0_iff insertCI one_eq_numeral_iff semiring_norm(83) zero_less_numeral)
+				have snd_q: "snd ?q \<subseteq> c"
+					using assms pop_card pop_ins eq4
+					by (smt One_nat_def card.empty card_gt_0_iff dual_order.trans finite_insert one_eq_numeral_iff semiring_norm(83) subset_insertI zero_less_numeral)
+
+				have "ident ?init = ident ?other"
+					using eq4expand hd_stock_neg stock_0
+					by (smt One_nat_def add_diff_cancel_right' diff_numeral_Suc eq4 hd_conv_nth ident.simps(1) ident.simps(2) last.simps last_conv_nth last_rev length_Cons length_rev length_tl list.sel(3) list.size(3) nth_tl numeral_3_eq_3 old.nat.distinct(1) plus_1_eq_Suc pred_numeral_simps(2) semiring_norm(26) semiring_norm(27) stock.simps(2) zero_less_one)
+				
+				have "stock (card c - 3) vars = [Neg (fresh vars undefined), Pos (fresh vars undefined)]"
+					using eq4 stock_eq4 by blast
+				hence x: "?init = Pos (fresh vars undefined) \<and> ?other = Neg (fresh vars undefined)"
+					by simp
+
+				hence one: "(vmap\<up>) ?init \<Longrightarrow> \<not>(vmap\<up>) ?other"
+					using ex_mid_lift by metis
+				hence two: "(vmap\<up>) ?other \<Longrightarrow> \<not>(vmap\<up>) ?init"
+					using x by metis
+
+				then consider (vmap_init) "(vmap\<up>) ?init"
+					| (vmap_other) "(vmap\<up>) ?other"
+					using ex_mid_lift x by metis
+				thus ?thesis
+				proof cases
+					case vmap_init
+					then obtain subc where subc: "subc = insert ?other (snd ?q)"
+						by blast
+
+					hence "\<not>(vmap\<up>) ?other"
+						using one vmap_init by blast
+					moreover have "\<forall>l \<in> snd ?q. \<not>(vmap\<up>) l"
+						using snd_q hd Suc.prems by blast
+					ultimately show ?thesis
+						using eq4expand Suc.prems by simp
+				next
+					case vmap_other
+					then obtain subc where subc: "subc = {fst ?p, fst ?q, last (stock (card c - 3) vars)}"
+						by blast
+
+					hence "\<not>(vmap\<up>) ?init"
+						using two vmap_other by blast
+					moreover have "\<not>(vmap\<up>) (fst ?p)"
+						using fst_p hd Suc.prems by blast
+					moreover have "\<not>(vmap\<up>) (fst ?q)"
+						using fst_q hd Suc.prems by blast
+					ultimately show ?thesis
+						using eq4expand Suc.prems by simp
+				qed
+			next
+				case gt4
+
+				let ?p = "pop c"
+				let ?t = "fst ?p"
+				let ?rest = "snd ?p"
+			
+				have c: "c = insert ?t ?rest"
+					using pop_ins Suc.prems Suc.hyps
+					by (metis card_eq_0_iff diff_0_eq_0 old.nat.distinct(1))
+	
+				have suc_card: "Suc (card ?rest) = card c"
+					using Suc.prems Suc.hyps c pop_card
+					by (metis card_eq_0_iff diff_0_eq_0 old.nat.distinct(1))
+
+				have n: "n = card ?rest - 3"
+					using Suc.hyps suc_card by arith
+
+				thm Suc.hyps
+				hence "\<exists>subc \<in> set (fst (refc ?rest vars)). \<forall>l \<in> subc. \<not> (vmap\<up>) l"
+					apply (rule Suc.hyps(1))
+					using c Suc.prems by blast
+
+				then show ?thesis 
+			qed
+		qed
+	next
+		case tl
+		then show ?thesis sorry
+	qed
+
+		oops
+	obtain c' where "c' \<in> set (c # xs)"
+		by fastforce
+	then consider (hd) "c' = c"
+		| (tl) "c' \<in> set xs"
+		by fastforce
+	hence "\<forall>l \<in> c'. \<not> (vmap\<up>) l"
+	proof cases
+		case hd
+		thus ?thesis
+		proof (induction "card c - 3" arbitrary: c)
+			case 0
+			thus ?case
+				using assms(5) hd by auto
+		next
+			case (Suc n)
+			consider (eq4) "card c = 4"
+				| (gt4) "card c > 4"
+				using Suc.prems assms(5) hd by fastforce
+			thus ?case
+			proof cases
+				case eq4
+				then show ?thesis 
+			next
+				case gt4
+				then show ?thesis sorry
+			qed
+		qed
+	next
+		case tl
+
+		then show ?thesis sorry
+	qed
+
+
+
+	show "False" sorry
+qed
+
+
+lemma checkpoint:                                                                             
 	assumes "sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
 	shows "sat (fst (refc c vars) @ xs)"
 	using assms unfolding sat_def models_def
@@ -3040,7 +3849,7 @@ proof -
 		ultimately have tgt: "tgt \<in> c_tgt"
 			by simp
 
-		have "c_tgt \<in> set (fst (refc c vars))"
+		have c_tgt_refc: "c_tgt \<in> set (fst (refc c vars))"
 			using c_tgt assms(5) unfolding refc_def apply (auto simp add: Let_def split: if_splits)
 			apply (rule nth_mem)
 			using i_hi unfolding refc_def apply (auto simp add: Let_def split: if_splits)
@@ -3055,10 +3864,12 @@ proof -
 		have aux_c: "\<forall>c' \<in> set (butlast (butlast (fst (refc c vars)))). \<exists>i j. i \<notin> vars \<and> j \<notin> vars \<and> i \<noteq> j \<and> Pos i \<in> c' \<and> Neg j \<in> c'"
 			apply (rule splc_aux_clause[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
 			prefer 11 using assms idset_iff apply (meson UnionI list.set_intros(1) subset_iff)
-			using assms aux1 aux2 aux3 stock_length unfolding refc_def 
+			using assms aux1 aux2 aux3 stock_length unfolding refc_def
 			by (fastforce simp add: Let_def split: if_splits)+
 
-		moreover have "c_tgt \<in> set (butlast (butlast (fst (refc c vars))))"
+
+
+		moreover have c_tgt_set: "c_tgt \<in> set (butlast (butlast (fst (refc c vars))))"
 			using c_tgt i_hi nth_butlast_set by simp
 
 		ultimately obtain lv rv where lv: "Neg lv \<in> c_tgt" and rv: "Pos rv \<in> c_tgt"
@@ -3077,8 +3888,13 @@ proof -
 		ultimately have "c_tgt = {Neg lv, tgt, Pos rv}"
 			using lv rv tgt by auto
 
-		then obtain vmap_n1 where vmap_n1: "(vmap_n1\<up>) tgt"
-			using tgt2 by auto
+		(* initially set all stock variable mappings in current clause to false -- lifts for negatives *)
+		obtain vmap_n0 where vmap_n0: "vmap_n0 = (\<lambda>v. if v \<in> idset (set ?s) then False else vmap_orig v)"
+			by auto
+		then obtain vmap_n1 where vmap_n1: "vmap_n1 = vmap_n0(ident tgt := case tgt of Pos x \<Rightarrow> True | Neg x \<Rightarrow> False)"
+			using tgt2 by blast
+		hence vmap_lift_tgt: "(vmap_n1\<up>) tgt"
+			using lift_def by (smt (verit) fun_upd_apply ident.elims lit.simps(5) lit.simps(6))
 		then obtain vmap_n2 where vmap_n2: "vmap_n2 = fun_upd vmap_n1 lv True"
 			by auto
 		then obtain vmap_tgt where vmap_tgt: "vmap_tgt = fun_upd vmap_n2 rv False"
@@ -3089,54 +3905,68 @@ proof -
 		hence "\<not>(vmap_tgt\<up>) (Pos rv)"
 			using vmap_tgt unfolding lift_def by simp
 		hence vmap_tgt_carry: "(vmap_tgt\<up>) tgt"
-			using tgt_lv tgt_rv vmap_n1 vmap_n2 vmap_tgt lift_def
+			using tgt_lv tgt_rv vmap_n1 vmap_n2 vmap_tgt lift_def vmap_lift_tgt
 			by (smt fun_upd_apply lit.exhaust lit.simps(5) lit.simps(6))
 
 		let ?front = "take (2*i) (tl (rev ?s))"
 		let ?rear = "drop (2*(Suc i)) (tl (rev ?s))"
 
-		obtain vmap_tgt_front where vmap_tgt_front: (* undefined for negatives only *)
-			"vmap_tgt_front = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := True) else f) ?front vmap_tgt"
+		obtain vmap_tgt_front where vmap_tgt_front:
+			"vmap_tgt_front = fold (\<lambda>x f. f(ident x := True)) ?front vmap_tgt"
 			by blast
 
 		find_theorems "fun_upd"
 		thm "fun_upd_other"
 		thm "set_fold_ident_upd"
 
-		have "\<forall>l \<in> set (tl (rev ?s)). ident l \<notin> idset c"
+		have stock_clause_disj: "\<forall>l \<in> set (tl (rev ?s)). ident l \<notin> idset c"
 			using assms unfolding idset_def apply auto
 			by (smt butlast_rev idset_def in_set_butlastD mem_Collect_eq set_rev stock_fresh)
-		moreover have "set ?front \<subseteq> set (tl (rev ?s))" and "set ?rear \<subseteq> set (tl (rev ?s))"
+		moreover have front_stock: "set ?front \<subseteq> set (tl (rev ?s))" and rear_stock: "set ?rear \<subseteq> set (tl (rev ?s))"
 			by (meson set_take_subset, meson set_drop_subset)
 		ultimately have front_ident: "\<forall>l \<in> set ?front. ident l \<notin> idset c" and rear_ident: "\<forall>l \<in> set ?rear. ident l \<notin> idset c"
 			by blast+
 
-		have "ident tgt \<in> idset c"
+		have tgt_in_c: "ident tgt \<in> idset c"
 			using tgt1 unfolding idset_def by auto
 		hence "\<forall>l \<in> set ?front. ident l \<noteq> ident tgt"
 			using front_ident by metis
-		hence "(fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := True) else f) ?front vmap_tgt) (ident tgt) = vmap_tgt (ident tgt)"
+		hence "(fold (\<lambda>x f. f(ident x := True)) ?front vmap_tgt) (ident tgt) = vmap_tgt (ident tgt)"
 			by (rule set_fold_ident_upd)
 		hence "vmap_tgt_front (ident tgt) = vmap_tgt (ident tgt)"
 			using vmap_tgt_front by simp
 		hence vmap_tgt_front_carry: "(vmap_tgt_front\<up>) tgt"
 			using vmap_tgt_carry lift_def by (smt ident.elims lit.simps(5) lit.simps(6))
 
-		then obtain vmap_new where vmap_new: (* undefined for positives only *)
-			"vmap_new = fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) ?rear vmap_tgt_front"
+		then obtain vmap_new where vmap_new:
+			"vmap_new = vmap_tgt_front(ident (last ?s) := True)"
 			by blast
 
-		have "ident tgt \<in> idset c"
-			using tgt1 unfolding idset_def by auto
-		hence "\<forall>l \<in> set ?rear. ident l \<noteq> ident tgt"
-			using rear_ident by metis
-		hence "(fold (\<lambda>x f. if f (ident x) = undefined then f(ident x := False) else f) ?rear vmap_tgt_front) (ident tgt) = vmap_tgt_front (ident tgt)"
-			by (rule set_fold_ident_upd)
+		hence "ident (last ?s) \<noteq> ident tgt"
+			using assms stock_clause_disj tgt_in_c aux2 aux3 stock_length_even tgt1
+			by (metis Nil_is_rev_conv Nitpick.size_list_simp(2) One_nat_def Un_iff ident.elims ident.simps(1) last_rev length_rev list.set_sel(1) odd_one)
 		hence "vmap_new (ident tgt) = vmap_tgt_front (ident tgt)"
 			using vmap_new by simp
 		hence vmap_new_lift_tgt: "(vmap_new\<up>) tgt"
 			using vmap_tgt_front_carry lift_def by (smt ident.elims lit.simps(5) lit.simps(6))
 
+
+		have "2 * i < 2*length (fst (refc c vars)) - 4"
+			using i_hi by simp
+		also have twice_i_bound_alt: "... = 2*(card c - 2) - 4"
+			unfolding refc_def using assms aux3 splc_length stock_le3 stock_length
+			by (smt add_diff_cancel_left' fst_conv last_rev length_rev length_tl list.sel(2) lit.distinct(1) rev.simps(1))
+		also have "... = 2*(card c - 3) - 2"
+			by simp
+		also have "... = length (stock (card c - 3) vars) - 2"
+			using stock_length assms by metis
+		also have "... = length (tl (rev (stock (card c - 3) vars))) - 1"
+			by simp
+		finally have twice_i_bound: "2 * i \<le> length (tl (rev (stock (card c - 3) vars)))"
+			by simp
+
+		show ?thesis
+		proof (intro exI ballI)
 		fix c'
 		assume c': "c' \<in> set (fst (refc c vars) @ xs)"
 
@@ -3157,21 +3987,468 @@ proof -
 				thus ?thesis using vmap_new_lift_tgt i by blast
 			next
 				case front
-				then show ?thesis sorry
+				then obtain j where j: "j < i" and c': "c' = fst (refc c vars) ! j"
+					by blast
+
+				thm splc_aux_clause_nth
+				have "\<exists>x y. Neg y = tl (rev ?s) ! (2 * j) \<and> Pos x = tl (rev ?s) ! Suc (2 * j) \<and> Neg y \<in> c' \<and> Pos x \<in> c' \<and> y \<notin> vars \<and> x \<notin> vars"
+					apply (rule splc_aux_clause_nth[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"
+								and ?l = "splc c (tl (rev (stock (card c - 3) vars))) (last (stock (card c - 3) vars))" and ?c' = c'])
+					prefer 11 using assms idset_iff apply (meson UnionI list.set_intros(1) subset_iff)
+					using assms stock_length aux1 aux2 aux3 c' j i_hi unfolding refc_def
+					by (fastforce simp add: Let_def split: if_splits)+
+
+				hence "\<exists>x. Pos x = tl (rev ?s) ! Suc (2 * j) \<and> Pos x \<in> c'"
+					by blast
+				then obtain x where x: "Pos x = tl (rev ?s) ! Suc (2 * j) \<and> Pos x \<in> c'"
+					by blast
+
+				have x_front: "tl (rev ?s) ! Suc (2*j) \<in> set ?front"
+					apply (rule nth_set_take)
+					using j twice_i_bound by simp+
+
+				thm in_set_fold_upd
+				have "fold (\<lambda>x f. f(ident x := True)) ?front vmap_tgt (ident (Pos x))"
+					apply (rule in_set_fold_upd)
+					using x x_front by simp
+
+				hence "vmap_tgt_front x"
+					using vmap_tgt_front by simp
+
+				hence tgt_front_lift: "(vmap_tgt_front\<up>) (Pos x)"
+					unfolding lift_def by simp
+
+				have "Pos x \<noteq> last ?s"
+					using front_stock aux2 x x_front by auto
+				hence "(vmap_new\<up>) (Pos x)"
+					using vmap_new tgt_front_lift unfolding lift_def by simp
+
+				then show ?thesis using x by blast
 			next
 				case rear
-				then show ?thesis sorry
-			qed
+				then consider (normal) "\<exists>j. c' = fst (refc c vars) ! j \<and> j < length (fst (refc c vars)) - 2"
+					| (first) "c' = fst (refc c vars) ! (length (fst (refc c vars)) - 2)"
+					| (last) "c' = fst (refc c vars) ! (length (fst (refc c vars)) - 1)"
+					by (smt One_nat_def Suc_pred diff_Suc_eq_diff_pred diff_is_0_eq length_pos_if_in_set less_SucE less_Suc_eq_le numeral_2_eq_2 update zero_less_numeral)
+				thus ?thesis
+				proof cases
+					case normal
 
-			then show ?thesis sorry
+					then obtain j where j_lo: "j > i" and j_hi: "j < length (fst (refc c vars)) - 2" and c': "c' = fst (refc c vars) ! j"
+						using assms aux1 aux2 aux3 rear refc_def splc_clause_uniq stock_le3 stock_length
+						by (smt diff_le_self dual_order.strict_trans1 fst_conv last_rev length_rev length_tl list.sel(2) lit.distinct(1) rev.simps(1))
+
+					thm splc_aux_clause_nth
+					have aug_aux_c: "\<exists>x y. Neg y = tl (rev ?s) ! (2 * j) \<and> Pos x = tl (rev ?s) ! Suc (2 * j) \<and> Neg y \<in> c' \<and> Pos x \<in> c' \<and> y \<notin> vars \<and> x \<notin> vars"
+						apply (rule splc_aux_clause_nth[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"
+									and ?l = "splc c (tl (rev (stock (card c - 3) vars))) (last (stock (card c - 3) vars))" and ?c' = c'])
+						prefer 11 using assms idset_iff apply (meson UnionI list.set_intros(1) subset_iff)
+						using assms stock_length aux1 aux2 aux3 c' j_hi i_hi unfolding refc_def
+						by (fastforce simp add: Let_def split: if_splits)+
+
+					then obtain l x where l: "l = Neg x" and neg_x: "Neg x \<in> c'" and x_vars: "x \<notin> vars" and x_pos: "Neg x = tl (rev ?s) ! (2 * j)"
+						by blast
+
+					have x_idset: "x \<in> idset (set ?s)"
+						using assms update splc_set stock_le3 stock_length l neg_x x_vars
+						by (smt Set.set_insert Sup_insert Un_iff append_butlast_last_id aux1 aux2 aux3 butlast_rev empty_set fst_conv idset_iff last_rev length_rev length_tl list.sel(2) list.simps(15) lit.distinct(1) refc_def rev.simps(1) rev_rev_ident set_append set_rev sup_commute)
+
+					hence n0_lift: "(vmap_n0\<up>) l"
+						using vmap_n0 vmap_false_neg_lift l by metis
+
+					hence "Neg x \<noteq> tgt"
+						using assms idset_iff tgt1 x_vars
+						by (metis UnionI insert_iff list.simps(15))
+					hence n1_lift: "(vmap_n1\<up>) l"
+						using vmap_n0 vmap_n1 vmap_false_neg_lift assms aux3 idset_iff l tgt_in_c x_vars x_idset
+						by (smt UnionI fun_upd_other list.set_intros(1))
+
+					thm splc_lit_uniq
+					have lv_uniq: "\<forall>cc \<in> set (fst (refc c vars)). cc = c_tgt \<or> Neg lv \<notin> cc"
+						apply (rule splc_lit_uniq[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+						using assms aux1 aux2 stock_length lv c_tgt_refc unfolding refc_def
+						by (fastforce simp add: Let_def split: if_splits)+
+
+					thm splc_clause_uniq
+					have clause_uniq: "\<forall>i j. i < length (fst (refc c vars)) \<and> j < length (fst (refc c vars)) \<and> i \<noteq> j \<longrightarrow> (fst (refc c vars)) ! i \<noteq> (fst (refc c vars)) ! j"
+						apply (rule splc_clause_uniq[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+						using assms aux1 aux2 stock_length lv c_tgt_refc unfolding refc_def
+						by (fastforce simp add: Let_def split: if_splits)+
+					moreover have "i \<noteq> length (fst (refc c vars)) - 1"
+						using i_hi by simp
+					ultimately have "(fst (refc c vars)) ! i \<noteq> (fst (refc c vars)) ! (length (fst (refc c vars)) - 1)"
+						using rear by fastforce
+						
+					hence "c_tgt \<noteq> last (fst (refc c vars))"
+						using c_tgt c_tgt_set
+						by (metis empty_iff empty_set in_set_butlastD last_conv_nth)
+					hence "x \<noteq> lv"
+						using neg_x lv lv_uniq rear clause_uniq c_tgt update
+						by fastforce
+
+					hence n2_lift: "(vmap_n2\<up>) l"
+						using vmap_n2 n1_lift l lift_def
+						by (metis fun_upd_other lit.simps(6))
+
+					hence tgt_lift: "(vmap_tgt\<up>) l"
+						using vmap_tgt n2_lift l lift_def
+						by (metis fun_upd_apply lit.simps(6))
+
+
+					thm stock_length
+					hence "j < card c - 4"
+						using j_hi twice_i_bound_alt by arith
+					hence "2*j < 2*(card c - 4)"
+						by simp
+					hence "2*j < 2*(card c - 3) - 2"
+						by simp
+					hence "2*j < length (stock (card c - 3) vars) - 2"
+						using stock_length assms by metis
+					hence twice_j: "2*j < length (stock (card c - 3) vars) - 1"
+						by simp
+
+					thm tl_rev_stock_uniq
+					have "\<forall>k < 2*i. tl (rev ?s) ! k \<noteq> tl (rev ?s) ! (2*j)"
+					proof (intro allI impI)
+						fix k
+						assume a: "k < 2*i"
+
+						hence "k < length (tl (rev (stock (card c - 3) vars)))"
+							using twice_i_bound by simp
+						hence k: "k < length (stock (card c - 3) vars) - 1"
+							by simp
+
+						show "tl (rev ?s) ! k \<noteq> tl (rev ?s) ! (2*j)"
+							apply (rule tl_rev_stock_uniq[where ?vars = vars])
+							using assms apply simp
+							using k apply simp
+							using twice_j apply simp
+							using a j_lo apply simp
+							done
+					qed
+
+					hence "\<forall>k < 2*i. tl (rev ?s) ! k \<noteq> l"
+						using l x_pos by arith
+
+					hence neg_front: "l \<notin> set ?front"
+						by (simp add: in_set_conv_nth)
+
+
+					hence x_pos_alt: "Pos x = tl (rev ?s) ! ((2*j) - 1)"
+						using x_pos tl_rev_stock_pair_alt assms j_lo stock_length twice_j
+						by (smt (verit) Nat.lessE add_diff_inverse_nat dvd_triv_left even_Suc length_tl less_one less_zeroE nat_0_less_mult_iff nat_diff_split plus_1_eq_Suc zero_less_Suc)
+
+
+					thm tl_rev_stock_uniq
+					have "\<forall>k < 2*i. tl (rev ?s) ! k \<noteq> tl (rev ?s) ! ((2*j) - 1)"
+					proof (intro allI impI)
+						fix k
+						assume a: "k < 2*i"
+
+						hence "k < length (tl (rev (stock (card c - 3) vars)))"
+							using twice_i_bound by simp
+						hence k: "k < length (stock (card c - 3) vars) - 1"
+							by simp
+
+						show "tl (rev ?s) ! k \<noteq> tl (rev ?s) ! ((2*j) - 1)"
+							apply (rule tl_rev_stock_uniq[where ?vars = vars])
+							using assms apply simp
+							using k apply simp
+							using twice_j apply simp
+							using a j_lo apply simp
+							done
+					qed
+
+					hence "\<forall>k < 2*i. tl (rev ?s) ! k \<noteq> Pos x"
+						using x_pos_alt by arith
+
+					hence pos_front: "Pos x \<notin> set ?front"
+						by (simp add: in_set_conv_nth)
+
+
+					hence "\<forall>lit \<in> set ?front. ident lit \<noteq> ident l"
+						using pos_front neg_front l
+						by (metis ident.elims ident.simps(2))
+					hence "vmap_tgt_front (ident l) = vmap_tgt (ident l)"
+						using vmap_tgt_front set_fold_ident_upd by metis
+					hence tgt_front_lift: "(vmap_tgt_front\<up>) l"
+						using vmap_tgt_front tgt_lift l lift_def
+						by (metis ident.simps(2) lit.simps(6))
+
+					hence "ident l \<noteq> ident (last ?s)"
+						using x_pos_alt l twice_j aux2 aux3
+						by (metis UnI1 diff_le_self dual_order.strict_trans1 ident.simps(1) ident.simps(2) leD length_rev length_tl not_le_imp_less nth_mem)
+					hence "(vmap_new\<up>) l"
+						using vmap_new tgt_front_lift lift_def l
+						by (metis fun_upd_apply ident.simps(2) lit.simps(6))
+
+					thus ?thesis using l neg_x by blast
+				next
+					case first
+
+					hence "last ?s \<in> last (butlast (fst (refc c vars)))"
+						using assms aux1 aux2 aux3 refc_def splc_aux_clause_first stock_le3 stock_length
+						by (metis (no_types, lifting) fst_conv last_rev length_rev length_tl list.sel(2) lit.distinct(1) rev.simps(1))
+					moreover have "c' = last (butlast (fst (refc c vars)))"
+						using first assms refc_def c_tgt_set nth_butlast
+						by (smt One_nat_def butlast.simps(1) diff_Suc_eq_diff_pred diff_less dual_order.trans last_conv_nth le_eq_less_or_eq length_butlast length_pos_if_in_set list.size(3) n_not_Suc_n not_less_iff_gr_or_eq numeral_2_eq_2 zero_less_diff)
+					ultimately have "last ?s \<in> c'"
+						by simp
+
+					thus ?thesis using vmap_new aux3 vmap_true_pos_lift
+						by (metis fun_upd_same ident.simps(1))
+				next
+					case last
+
+					thm splc_aux_clause_last
+					have "\<exists>i. Neg i \<in> last (fst (refc c vars)) \<and> hd ?s = Neg i"
+						apply (rule splc_aux_clause_last[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+						using assms aux1 aux2 aux3 stock_length unfolding refc_def 
+						by (fastforce simp add: Let_def split: if_splits)+
+
+					then obtain l v where l: "l = Neg v" and v1: "Neg v \<in> last (fst (refc c vars))" and v2: "hd ?s = Neg v"
+						by blast
+
+					hence n0_lift: "(vmap_n0\<up>) l"
+						using vmap_n0 vmap_false_neg_lift aux3 idset_iff
+						by (metis last_rev list.set_sel(1) lit.distinct(1) rev.simps(1))
+
+					hence "Neg v \<noteq> tgt"
+						using assms aux3 idset_iff stock_fresh tgt1 v2
+						by (metis UnionI insert_iff last_rev list.set_sel(1) list.simps(15) lit.distinct(1) rev.simps(1))
+					hence n1_lift: "(vmap_n1\<up>) l"
+						using vmap_n0 vmap_n1 n0_lift vmap_false_neg_lift aux3 idset_iff l stock_clause_disj tgt_in_c v2
+						by (smt (verit, del_insts) Nitpick.size_list_simp(2) fun_upd_apply hd_conv_nth ident.simps(2) last_conv_nth last_in_set last_rev last_tl length_rev length_tl list.set_sel(1) lit.distinct(1) rev.simps(1))
+
+
+
+					thm splc_lit_uniq
+					have lv_uniq: "\<forall>cc \<in> set (fst (refc c vars)). cc = c_tgt \<or> Neg lv \<notin> cc"
+						apply (rule splc_lit_uniq[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+						using assms aux1 aux2 stock_length lv c_tgt_refc unfolding refc_def
+						by (fastforce simp add: Let_def split: if_splits)+
+
+					thm splc_clause_uniq
+					have "\<forall>i j. i < length (fst (refc c vars)) \<and> j < length (fst (refc c vars)) \<and> i \<noteq> j \<longrightarrow> (fst (refc c vars)) ! i \<noteq> (fst (refc c vars)) ! j"
+						apply (rule splc_clause_uniq[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+						using assms aux1 aux2 stock_length lv c_tgt_refc unfolding refc_def
+						by (fastforce simp add: Let_def split: if_splits)+
+					moreover have "i \<noteq> length (fst (refc c vars)) - 1"
+						using i_hi by simp
+					ultimately have "(fst (refc c vars)) ! i \<noteq> (fst (refc c vars)) ! (length (fst (refc c vars)) - 1)"
+						using rear by fastforce
+						
+					hence "c_tgt \<noteq> last (fst (refc c vars))"
+						using c_tgt c_tgt_set
+						by (metis empty_iff empty_set in_set_butlastD last_conv_nth)
+					hence "v \<noteq> lv"
+						using v1 lv lv_uniq rear
+						by (metis last_in_set less_zeroE list.size(3))
+
+					hence n2_lift: "(vmap_n2\<up>) l"
+						using vmap_n2 n1_lift l lift_def
+						by (metis fun_upd_other lit.simps(6))
+
+					hence tgt_lift: "(vmap_tgt\<up>) l"
+						using vmap_tgt n2_lift l lift_def
+						by (metis fun_upd_apply lit.simps(6))
+
+					have step0: "min (length (tl (rev ?s))) (2*(length (fst (refc c vars)) - 2)) = min (length (rev (?s)) - 1) (2*(length (fst (refc c vars))) - 4)"
+						by simp
+					moreover have step1: "... = min (length ?s - 1) (2*(length (fst (refc c vars))) - 4)"
+						by simp
+					moreover have step2: "... = min (2 * (card c - 3) - 1) (2*(length (fst (refc c vars))) - 4)"
+						using stock_length assms by metis
+					moreover have step3: "... = min (2 * ((2 + length (fst (refc c vars))) - 3) - 1) (2*(length (fst (refc c vars))) - 4)"
+						using splc_length assms refc_def aux3 stock_le3 stock_length v2
+						by (smt fst_conv last_rev length_rev length_tl lit.distinct(1) rev.simps(1))
+					moreover have step4: "... = min (2 * (length (fst (refc c vars)) - 1) - 1) (2*(length (fst (refc c vars))) - 4)"
+						by simp
+					moreover have step5: "... = min (2 * length (fst (refc c vars)) - 3) (2*(length (fst (refc c vars))) - 4)"
+						by simp
+					moreover have step6: "... = 2 * (length (fst (refc c vars))) - 4"
+						by simp
+
+					moreover have twice_i: "2*i < 2 * (length (fst (refc c vars))) - 4"
+						using i_hi by simp
+					ultimately have length_front: "length ?front = 2*i"
+						using i_hi length_take
+						by (smt min.absorb4 min.strict_boundedE)
+
+					hence length_front_bound: "length ?front < 2 * (length (fst (refc c vars))) - 4"
+						using twice_i by simp
+
+					have hd_0: "l = ?s ! 0"
+						using l v1 v2 aux3
+						by (metis hd_conv_nth last_rev lit.distinct(1) rev.simps(1))
+					hence "l = rev ?s ! (length ?s - 1)"
+						using v2 aux3
+						by (metis One_nat_def last_rev length_greater_0_conv length_rev lit.distinct(1) rev_nth rev_rev_ident)
+					hence step: "l = tl (rev ?s) ! (length ?s - 2)"
+						using assms stock_length_even
+						by (smt One_nat_def Suc_1 Suc_pred diff_Suc_eq_diff_pred diff_Suc_less length_greater_0_conv length_rev length_tl list.size(3) nth_tl odd_one)
+					hence "l = tl (rev ?s) ! (2 * (card c - 3) - 2)"
+						using stock_length assms by metis
+					hence "l = tl (rev ?s) ! (2 * ((2 + length (fst (refc c vars))) - 3) - 2)"
+						using splc_length assms refc_def aux3 stock_le3 stock_length v2
+						by (smt fst_conv last_rev length_rev length_tl lit.distinct(1) rev.simps(1))
+					hence "l = tl (rev ?s) ! (2 * ((length (fst (refc c vars))) - 1) - 2)"
+						by simp
+					hence "l = tl (rev ?s) ! (2 * (length (fst (refc c vars))) - 4)"
+						by (simp add: right_diff_distrib')
+
+					have i_card: "i < card c - 4"
+						using i_hi splc_length assms refc_def aux3 stock_le3 stock_length v2
+						by (smt add_diff_cancel_left' diff_diff_left fst_conv last_rev length_rev length_tl lit.distinct(1) numeral_Bit0 rev.simps(1))
+
+					thm tl_rev_stock_uniq
+					have "\<forall>j < 2*i. tl (rev ?s) ! (length ?s - 2) \<noteq> tl (rev ?s) ! j"
+					proof (intro allI impI)
+						fix j
+						assume a: "j < 2*i"
+						show "tl (rev ?s) ! (length ?s - 2) \<noteq> tl (rev ?s) ! j"
+							apply (rule tl_rev_stock_uniq[where ?vars = vars])
+							using assms apply simp
+							using a i_hi length_front apply simp
+							using a i_hi length_front apply simp
+							using a assms(4) length_front length_front_bound stock_length step0 step1 step2 step3 step4 step5 step6
+							apply (metis Suc_1 Suc_diff_Suc length_greater_0_conv length_tl less_zeroE list.size(3) min.strict_boundedE not_less_eq zero_less_diff)
+							done
+					qed
+
+					hence "\<forall>j < 2*i. tl (rev ?s) ! j \<noteq> l"
+						using step by metis
+
+					hence neg_front: "l \<notin> set ?front"
+						by (simp add: in_set_conv_nth)
+
+					have "?s ! Suc 0 = Pos v"
+						apply (rule stock_pair)
+						using assms stock_length hd_0 l by fastforce+
+					hence "Pos v = ?s ! 1"
+						by simp
+					hence "Pos v = rev ?s ! (length ?s - 2)"
+						using assms(4) aux3 stock_length_even v2
+						by (metis One_nat_def Suc_1 Suc_pred bot_nat_0.not_eq_extremum last_rev length_greater_0_conv length_rev lit.distinct(1) odd_one rev_nth rev_rev_ident zero_less_diff)
+					hence pos_v: "Pos v = tl (rev ?s) ! (length ?s - 3)"
+						using i_card assms stock_length
+						by (smt (verit, best) One_nat_def Suc_1 Suc_pred bot_nat_0.not_eq_extremum diff_Suc_eq_diff_pred diff_Suc_less diff_diff_left dvd_def length_0_conv length_rev length_tl mult_eq_self_implies_10 not_less_eq nth_tl numeral_3_eq_3 numeral_Bit0 odd_one)
+
+					have "\<forall>j < 2*i. tl (rev ?s) ! (length ?s - 3) \<noteq> tl (rev ?s) ! j"
+					proof (intro allI impI)
+						fix j
+						assume a: "j < 2*i"
+						show "tl (rev ?s) ! (length ?s - 3) \<noteq> tl (rev ?s) ! j"
+							apply (rule tl_rev_stock_uniq[where ?vars = vars])
+							using assms apply simp
+							using a i_hi length_front apply simp
+							using a i_hi length_front apply simp
+							using assms length_front length_front_bound refc_def splc_length stock_length
+							apply (smt (verit) Suc_diff_Suc a add_diff_cancel_left' diff_diff_left dual_order.strict_trans fst_conv length_greater_0_conv length_rev length_tl list.size(3) mult_2 not_less_eq not_less_eq_eq numeral_3_eq_3 numeral_Bit0 numeral_eq_Suc plus_1_eq_Suc pred_numeral_simps(2) right_diff_distrib' semiring_norm(26) semiring_norm(27))
+							done
+					qed
+
+					hence "\<forall>j < 2*i. tl (rev ?s) ! j \<noteq> Pos v"
+						using pos_v by metis
+					hence pos_front: "Pos v \<notin> set ?front"
+						by (simp add: in_set_conv_nth)
+
+
+					hence "\<forall>lit \<in> set ?front. ident lit \<noteq> ident l"
+						using pos_front neg_front l
+						by (metis ident.elims ident.simps(2))
+					hence "vmap_tgt_front (ident l) = vmap_tgt (ident l)"
+						using vmap_tgt_front set_fold_ident_upd by metis
+					hence tgt_front_lift: "(vmap_tgt_front\<up>) l"
+						using vmap_tgt_front tgt_lift l lift_def
+						by (metis ident.simps(2) lit.simps(6))
+
+					hence "ident l \<noteq> ident (last ?s)"
+						using assms aux2 aux3 l v1 stock_length_even pos_v stock_gt0
+						by (smt Nitpick.size_list_simp(2) One_nat_def UnCI diff_Suc_eq_diff_pred diff_Suc_less ident.simps(1) ident.simps(2) leD length_greater_0_conv length_rev not_less_eq nth_mem numeral_3_eq_3 numeral_eq_Suc odd_one pred_numeral_simps(2) semiring_norm(26) semiring_norm(27) zero_less_diff)
+					hence "(vmap_new\<up>) l"
+						using vmap_new tgt_front_lift lift_def l
+						by (metis fun_upd_apply ident.simps(2) lit.simps(6))
+
+					thus ?thesis using l v1 update
+						by (metis empty_iff empty_set last last_conv_nth)
+				qed
+			qed
 		next
 			case rest
-			then show ?thesis sorry
+
+			hence "sat xs"
+				using assms sat_tl by fastforce
+			hence orig_lift: "\<exists>l \<in> c'. (vmap_orig\<up>) l"
+				unfolding sat_def models_def using rest vmap_orig by simp
+			then obtain l where l1: "l \<in> c'" and l2: "(vmap_orig\<up>) l"
+				by blast
+
+			have v_xs: "\<forall>v \<in> idset (\<Union>(set xs)). v \<notin> idset (set ?s)"
+				using assms idset_iff stock_fresh
+				by (metis Sup_insert UnCI list.simps(15))
+			hence v_stock: "\<forall>v \<in> idset c'. v \<notin> idset (set ?s)"
+				using rest idset_iff
+				by (metis UnionI)
+
+			have "c' \<in> set xs"
+				using rest by simp
+			hence "\<forall>l \<in> c'. l \<in> \<Union>(set xs)"
+				by blast
+			hence notin_stock: "\<forall>l \<in> c'. l \<notin> set ?s"
+				using assms v_stock idset_iff
+				by (metis ident.elims)
+			hence ident_orig_n0: "\<forall>l \<in> c'. vmap_orig (ident l) = vmap_n0 (ident l)"
+				by (metis ident.elims idset_iff v_stock vmap_n0)
+			hence "\<forall>l \<in> c'. (vmap_orig\<up>) l = (vmap_n0\<up>) l"
+				using lift_def
+				by (smt ident.elims lit.simps(5) lit.simps(6))
+				
+			hence "(vmap_n0\<up>) l"
+				using orig_lift l1 l2 by blast
+
+			hence n1_lift: "(vmap_n1\<up>) l"
+				using vmap_n1 tgt2 ident_orig_n0 lift_def l1 l2	
+				by (smt fun_upd_apply ident.elims lit.simps(5) lit.simps(6))
+
+			hence "ident l \<noteq> lv"
+				using assms idset_iff lv_vars rest l1 l2
+				by (smt (verit) UnionI ident.elims insert_iff list.simps(15))
+			hence n2_lift: "(vmap_n2\<up>) l"
+				using vmap_n2 n1_lift assms lift_def idset_iff lv_vars rest
+				by (smt fun_upd_apply ident.elims lit.simps(5) lit.simps(6))
+
+			hence "ident l \<noteq> rv"
+				using assms idset_iff rv_vars rest l1 l2
+				by (smt (verit) UnionI ident.elims insert_iff list.simps(15))
+			hence tgt_lift: "(vmap_tgt\<up>) l"
+				using vmap_tgt n2_lift assms lift_def idset_iff rv_vars rest
+				by (smt fun_upd_apply ident.elims lit.simps(5) lit.simps(6))
+
+			hence "l \<notin> set ?front"
+				using notin_stock l1 l2
+				by (metis in_set_takeD list.sel(2) list.set_sel(2) set_rev)
+			hence "\<forall>lit \<in> set ?front. ident lit \<noteq> ident l"
+				using v_stock idset_iff l1 l2
+				by (smt (verit) butlast_rev ident.elims in_set_butlastD in_set_takeD set_rev)
+			hence "vmap_tgt_front (ident l) = vmap_tgt (ident l)"
+				using vmap_tgt_front set_fold_ident_upd by metis
+			hence tgt_front_lift: "(vmap_tgt_front\<up>) l"
+				using vmap_tgt_front tgt_lift lift_def
+				by (metis (no_types, lifting) ident.elims lit.simps(5) lit.simps(6))
+
+			hence "ident l \<noteq> ident (last ?s)"
+				using assms aux3 l1 l2 notin_stock stock_length_even
+				by (metis (no_types, lifting) Nil_is_rev_conv Nitpick.size_list_simp(2) One_nat_def ident.elims ident.simps(1) last_in_set last_rev length_rev list.sel(2) list.set_sel(2) lit.distinct(1) odd_one set_rev)
+			hence "(vmap_new\<up>) l"
+				using vmap_new tgt_front_lift lift_def
+				by (smt fun_upd_apply ident.elims lit.simps(5) lit.simps(6))
+
+			thus ?thesis using l1 l2 by blast
 		qed
 
 
-		hence "\<forall>i < length (fst (refc c vars)). \<exists>l \<in> fst (refc c vars) ! i. (vmap_new\<up>) l"
-			
+			 
 		(* 
 			stock: n1 p1 n2 p2 ... nx px
 			rev stock: px nx ... p2 n2 p1 n1
@@ -3191,11 +4468,11 @@ proof -
 			thus ?thesis
 		*)
 
-
-		then show ?thesis sorry
+		thus "\<exists>l\<in>c'. (vmap_new\<up>) l" .
+	qed
 	next
 		case first
-		then show ?thesis sorry
+		then show ?thesis 
 	next
 		case last
 		then show ?thesis sorry
@@ -4945,44 +6222,6 @@ next
 qed
 *)
 
-
-lemma sat_single: "c \<noteq> {} \<Longrightarrow> sat (c # [])"
-	unfolding sat_def models_def 
-	by (metis empty_set ex_in_conv lift_def lit.case_distrib set_ConsD)
-
-lemma sat_tl: "sat expr \<Longrightarrow> sat (tl expr)"
-	unfolding sat_def models_def
-	by (metis list.sel(2) list.set_sel(2))
-
-lemma sat_rev: "sat expr \<Longrightarrow> sat (rev expr)"
-	unfolding sat_def models_def by auto 
-
-lemma sat_butlast: "sat expr \<Longrightarrow> sat (butlast expr)"
-	using sat_tl sat_rev butlast_rev rev_swap by metis
-
-lemma sat_subset: "sat expr \<Longrightarrow> sat (filter P expr)"
-	unfolding sat_def models_def by auto
-
-
-lemma update_preserve_lit: "\<lbrakk> vmap \<Turnstile> expr; vnew \<notin> idset (\<Union>(set expr)); l \<in> \<Union>(set expr) \<rbrakk>
-															\<Longrightarrow> ((fun_upd vmap vnew b)\<up>) l = (vmap\<up>) l"
-	unfolding idset_def apply (auto simp: fun_upd_def lift_def)
-	by (smt (z3) ident.elims lit.simps(5) lit.simps(6))+
-
-lemma update_preserve_sat:
-	assumes "sat expr" "vmap \<Turnstile> expr" "vnew \<notin> idset (\<Union>(set expr))" 
-	shows "(fun_upd vmap vnew b) \<Turnstile> expr"
-	unfolding idset_def sat_def models_def
-proof (intro ballI)
-	fix clause :: "'a lit set"
-	assume clause_in_expr: "clause \<in> set expr"
-
-	obtain lit where "lit \<in> clause" and "(fun_upd vmap vnew b\<up>) lit"
-		by (meson UnionI assms(2) assms(3) clause_in_expr models_def update_preserve_lit)
-
-	thus "\<exists>lit \<in> clause. (vmap(vnew := b)\<up>) lit"
-		by blast
-qed
 
 (*
 fun gen_map :: "'a lit set \<Rightarrow> 'a set \<Rightarrow> 'a lit \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> ('a \<Rightarrow> bool)"
