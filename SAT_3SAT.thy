@@ -3508,6 +3508,15 @@ lemma sat_butlast: "sat expr \<Longrightarrow> sat (butlast expr)"
 lemma sat_subset: "sat expr \<Longrightarrow> sat (filter P expr)"
 	unfolding sat_def models_def by auto
 
+lemma sat_append: "sat (xs @ ys) \<Longrightarrow> sat xs \<and> sat ys"
+	unfolding sat_def models_def by auto
+
+lemma sat_rotate: "sat (x # xs) \<Longrightarrow> sat (xs @ x # [])"
+	unfolding sat_def models_def by simp
+
+lemma sat_rotate_append: "sat (xs @ ys) \<Longrightarrow> sat (ys @ xs)"
+	unfolding sat_def models_def by auto
+
 
 lemma update_preserve_lit: "\<lbrakk> vmap \<Turnstile> expr; vnew \<notin> idset (\<Union>(set expr)); l \<in> \<Union>(set expr) \<rbrakk>
 															\<Longrightarrow> ((fun_upd vmap vnew b)\<up>) l = (vmap\<up>) l"
@@ -3795,7 +3804,7 @@ proof -
 qed
 
 
-lemma checkpoint:                                                                             
+lemma checkpoint:
 	assumes "sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
 	shows "sat (fst (refc c vars) @ xs)"
 	using assms unfolding sat_def models_def
@@ -4795,6 +4804,387 @@ proof -
 			qed
 		qed
 	qed
+qed
+
+fun fold_rotate :: "nat \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'a list \<Rightarrow> 'b \<Rightarrow> 'b"
+	where "fold_rotate 0 f (x # xs) init = init"
+	| "fold_rotate (Suc n) f (x # xs) init = fold_rotate n f xs (f x init)"
+
+fun map_rotate_carry :: "nat \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> 'a list * 'b) \<Rightarrow> 'a list \<Rightarrow> 'b \<Rightarrow> 'a list"
+	where "map_rotate_carry 0 f (x # xs) carry = x # xs"
+	| "map_rotate_carry (Suc n) f (x # xs) carry = map_rotate_carry n f (xs @ x # []) (snd (f x carry)) @ fst (f x carry)"
+
+fun n_comp :: "nat \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> ('a \<Rightarrow> 'a)"
+	where "n_comp 0 f = id"
+	| "n_comp (Suc n) f = f \<circ> n_comp n f"
+
+fun refc_rotate
+	where "refc_rotate [] = []"
+	| "refc_rotate (x # xs) = xs @ (fst (refc x (idset (\<Union>(set (x # xs))))))"
+
+lemma "card x \<ge> 4 \<Longrightarrow> \<forall>c \<in> set (fst (refc x (idset (\<Union>(set (x # xs)))))). card c = 3"
+proof -
+	assume "card x \<ge> 4"
+	show "\<forall>c \<in> set (fst (refc x (idset (\<Union>(set (x # xs)))))). card c = 3"
+	proof (intro ballI)
+		fix c
+		assume c: "c \<in> set (fst (refc x (idset (\<Union>(set (x # xs))))))"
+
+		have "finite (idset (\<Union> (set (x # xs))))"
+			sledgehammer
+			oops
+
+		let ?s = "stock (card x - 3) (idset (\<Union> (set (x # xs))))"
+		show "card c = 3"
+			apply (rule splc_card_3[where ?c = x and ?vars = "idset (\<Union>(set (x # xs)))" and ?s = ?s and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+			using \<open>4 \<le> card x\<close> card.infinite apply fastforce
+						 apply simp
+						apply simp
+			using stock_length
+		qed
+
+lemma
+	assumes "sat (x # xs)" "finite x" "finite (idset (\<Union>(set (x # xs))))" "card x \<ge> 4"
+	shows "sat (refc_rotate (x # xs))"
+	using assms checkpoint sat_rotate_append
+	by fastforce
+
+lemma "\<lbrakk> finite c; finite vars \<rbrakk> \<Longrightarrow> finite (snd (refc c vars) \<union> vars)"
+	by (metis card_eq_0_iff diff_is_0_eq finite_UnI refc_def snd_conv stock_idset_card)
+
+lemma finite_expr: "\<forall>c \<in> set xs. finite c \<Longrightarrow> finite (\<Union>(set xs))"
+	by blast
+
+lemma finite_idset: "finite (\<Union>(set xs)) \<Longrightarrow> finite (idset (\<Union>(set xs)))"
+	by (induction xs) (auto simp add: idset_def Union_eq)
+
+lemma finite_expr_idset: "\<forall>c \<in> set xs. finite c \<Longrightarrow> finite (idset (\<Union>(set xs)))"
+	using finite_expr finite_idset by blast
+
+lemma
+	assumes "sat (x # xs)" "\<forall>c \<in> set (x # xs). finite c \<and> card c \<ge> 4"
+	shows "sat (refc_rotate (x # xs))"
+	using assms checkpoint sat_rotate_append finite_expr_idset
+	by (metis list.set_intros(1) refc_rotate.simps(2))
+
+lemma n_comp_refc_rotate: "(n_comp (Suc n) refc_rotate) (x # xs) = (n_comp n refc_rotate) (xs @ (fst (refc x (idset (\<Union>(set (x # xs)))))))"
+	by (induction n refc_rotate arbitrary: x xs rule: n_comp.induct) auto
+
+lemma l: "(n_comp (Suc n) refc_rotate) xs = refc_rotate (n_comp n refc_rotate xs)"
+	by simp
+
+lemma "\<lbrakk> hd xs = hd ys; idset (\<Union>(set xs)) = idset (\<Union>(set ys)) \<rbrakk> \<Longrightarrow> refc_rotate xs = refc_rotate ys"
+	apply (induction xs arbitrary: ys rule: refc_rotate.induct)
+	 apply (auto simp add: idset_def)
+                               
+lemma "(n_comp n refc_rotate) (xs @ (fst (refc x (idset (\<Union>(set (x # xs))))))) = (n_comp n refc_rotate) xs @ (fst (refc x (idset (\<Union>(set (x # xs))))))"
+	apply (induction n arbitrary: x xs)
+	 apply auto
+
+lemma ys_drop: "n \<le> length xs \<Longrightarrow> \<exists>ys. n_comp n refc_rotate xs = (drop n xs) @ ys"
+	apply (induction n arbitrary: xs)
+	 apply auto
+	by (smt (verit) append.assoc drop_Suc drop_eq_Nil less_Suc_eq_le linorder_not_le list.sel(3) not_less_iff_gr_or_eq refc_rotate.elims tl_append2 tl_drop)
+
+lemma "\<forall>c \<in> set xs. finite c \<Longrightarrow> n \<le> length xs \<Longrightarrow> ((n_comp n refc_rotate) xs = (drop n xs) @ ys) \<Longrightarrow> (\<forall>c \<in> set ys. card c = 3)"
+	apply (induction n arbitrary: xs ys)
+	 apply auto
+
+
+lemma ys_drop_suc: "\<lbrakk> n < length xs; n_comp n refc_rotate xs = (drop n xs) @ ys \<rbrakk>
+					\<Longrightarrow> n_comp (Suc n) refc_rotate xs = (drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+	apply (induction n arbitrary: xs ys)
+	 apply auto
+	 apply (metis drop0 drop_Suc list.exhaust_sel refc_rotate.simps(2))
+	by (smt Union_Un_distrib append.assoc append_Cons drop_Suc drop_eq_Nil list.collapse nat_less_le not_less_iff_gr_or_eq refc_rotate.simps(2) set_append tl_drop)
+
+lemma refc_rotate_finite:
+	assumes "\<forall>c \<in> set xs. finite c \<and> card c \<ge> 4" "n \<le> length xs"
+	shows "\<forall>c \<in> set (n_comp n refc_rotate xs). finite c"
+	using assms
+proof (induction n arbitrary: xs)
+  case 0
+  then show ?case by simp
+next
+  case (Suc n)
+
+  hence "n \<le> length xs"
+  	by arith
+  hence "\<exists>ys. n_comp n refc_rotate xs = (drop n xs) @ ys"
+  	using ys_drop by blast
+  then obtain ys where ys: "n_comp n refc_rotate xs = (drop n xs) @ ys"
+  	by blast
+
+  hence expand_suc: "n_comp (Suc n) refc_rotate xs = (drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+  	using Suc.prems(2) Suc_le_lessD ys_drop_suc by blast
+
+  thus ?case
+  proof (intro ballI)
+  	fix c
+  	assume c: "c \<in> set (n_comp (Suc n) refc_rotate xs)"
+
+  	then consider (front) "c \<in> set (drop (Suc n) xs @ ys)"
+			| (rear) "c \<in> set (fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys))))))"
+			using expand_suc by fastforce
+		thus "finite c"
+		proof cases
+			case front
+			thm Suc.IH
+			have "\<forall>c \<in> set (n_comp n refc_rotate xs). finite c"
+				apply (rule Suc.IH)
+				using Suc.prems by auto
+
+			thus ?thesis
+				using ys Suc.prems(1) front set_drop_subset by fastforce
+		next
+			case rear
+
+			let ?vars = "idset (\<Union> (set (drop n xs @ ys)))"
+			let ?s = "stock (card (hd (drop n xs)) - 3) ?vars"
+
+
+			have aux1: "set (tl (rev ?s)) \<inter> hd (drop n xs) = {}"
+				apply (rule refc_stock_clause_disj)
+					unfolding refc_def using assms apply (simp add: Let_def split: if_splits)
+						apply (metis Suc.IH Suc.prems(1) \<open>n \<le> length xs\<close> finite_expr_idset ys)
+					 apply (meson Suc.prems(1) Suc.prems(2) drop_eq_Nil in_set_dropD list.set_sel(1) not_less_eq_eq)
+					using idset_iff apply (smt (verit) Suc.prems(2) UnionI append_is_Nil_conv drop_eq_Nil hd_append2 list.set_sel(1) not_less_eq_eq subset_iff)
+				done
+
+			have aux2: "last ?s \<notin> set (tl (rev ?s)) \<union> hd (drop n xs)"
+				apply (rule refc_init_uniq)
+				unfolding refc_def using assms apply (simp add: Let_def split: if_splits)
+					apply (metis Suc.IH Suc.prems(1) \<open>n \<le> length xs\<close> finite_expr_idset ys)
+				 apply (meson Suc.prems(1) Suc.prems(2) drop_eq_Nil in_set_dropD list.set_sel(1) not_less_eq_eq)
+				using idset_iff apply (smt (verit) Suc.prems(2) UnionI append_is_Nil_conv drop_eq_Nil hd_append2 list.set_sel(1) not_less_eq_eq subset_iff)
+				done
+
+			thm stock_length
+			have stock_len: "length (stock (card (hd (drop n xs)) - 3) ?vars) = 2 * (card (hd (drop n xs)) - 3)"
+				apply (rule stock_length)
+				by (metis Suc.IH Suc.prems(1) \<open>n \<le> length xs\<close> finite_expr_idset ys)
+
+			thm splc_card_3
+			have "card c = 3"
+				apply (rule splc_card_3[where ?c' = c and ?vars = ?vars and ?c = "hd (drop n xs)"
+								and ?s = ?s and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+								apply (meson Suc.prems(1) Suc.prems(2) drop_eq_Nil hd_in_set in_set_dropD not_less_eq_eq)
+							 apply simp
+							apply simp
+				using stock_len apply simp
+						apply (metis fst_conv list.sel(2) rear refc_def rev.simps(1) splc.simps(1) stock_le3)
+					 apply (meson Suc.prems(1) Suc.prems(2) drop_eq_Nil in_set_dropD list.set_sel(1) not_less_eq_eq)
+					apply (metis Suc.IH Suc.prems(1) \<open>n \<le> length xs\<close> finite_expr_idset ys)
+				using aux2 apply simp
+				using aux1 apply simp
+				done
+
+			then show ?thesis
+				using card.infinite by fastforce
+		qed
+	qed
+qed
+
+lemma
+	assumes "sat xs" "\<forall>c \<in> set xs. finite c \<and> card c \<ge> 4"
+	shows "sat (n_comp (length xs) refc_rotate xs)"
+	using assms
+proof (induction "length xs" refc_rotate arbitrary: xs rule: n_comp.induct)
+  case 1
+  then show ?case by simp
+next
+  case (2 n)
+
+  have "sat (fst (refc (hd xs) (idset (\<Union> (set (hd xs # tl xs))))) @ (tl xs))"
+  	apply (rule checkpoint)
+  	using "2.prems"(1) "2.hyps"(2) apply (metis list.collapse list.size(3) old.nat.distinct(1))
+  		 apply simp
+  	using 2 apply (metis Zero_neq_Suc hd_in_set list.size(3))
+  	using 2 finite_expr_idset apply (metis list.collapse list.size(3) old.nat.distinct(1))
+  	using 2 apply (metis length_0_conv list.set_sel(1) old.nat.distinct(1))
+  	done
+
+  hence "sat ((tl xs) @ (fst (refc (hd xs) (idset (\<Union> (set (hd xs # tl xs)))))))"
+  	using sat_rotate_append by blast
+
+  thm "2.hyps"(1)
+  have "sat (n_comp (length (tl xs)) refc_rotate (tl xs))"
+  	using 2 by (metis diff_Suc_1 length_0_conv length_tl list.set_sel(2) old.nat.distinct(1) sat_tl)
+
+  hence "sat ((n_comp (length (tl xs)) refc_rotate (tl xs)) @ (fst (refc (hd xs) (idset (\<Union> (set (hd xs # tl xs)))))))"
+  	
+
+  thm n_comp_refc_rotate
+  moreover have "n_comp (Suc (length (tl xs))) refc_rotate (hd xs # tl xs)
+										= n_comp (length (tl xs)) refc_rotate ((tl xs) @ fst (refc (hd xs) (idset (\<Union> (set (hd xs # tl xs))))))"
+  	sorry
+
+  ultimately show ?case 
+qed
+
+
+lemma "\<forall>c \<in> set xs. finite c \<Longrightarrow> \<forall>c \<in> set (n_comp n refc_rotate xs). finite c"
+	apply (induction n arbitrary: xs)
+	 apply auto
+
+
+lemma refc_rotate_sat:
+	assumes "sat xs" "\<forall>c \<in> set xs. finite c \<and> card c \<ge> 4" "n \<le> length xs"
+	shows "sat (n_comp n refc_rotate xs)"
+	using assms
+proof (induction n arbitrary: xs)
+  case 0
+  then show ?case by simp
+next
+  case (Suc n)
+
+  have sat_n: "sat ((n_comp n refc_rotate) xs)"
+  	apply (rule Suc.IH)
+  	using Suc.prems by auto
+
+  then obtain ys where ys: "n_comp n refc_rotate xs = (drop n xs) @ ys"
+  	by (metis drop_all nle_le self_append_conv2 ys_drop)
+
+  hence "sat (n_comp n refc_rotate xs) = sat ((drop n xs) @ ys)"
+  	by simp
+
+  let ?vars = "idset (\<Union>(set (drop n xs @ ys)))"
+
+  have sat_cp: "sat ((fst (refc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))"
+  	apply (rule checkpoint)
+  	using Suc.prems sat_n ys apply (metis Cons_eq_appendI drop_eq_Nil2 list.exhaust_sel not_less_eq_eq)
+  	using Suc.prems apply (metis append_Cons drop_eq_Nil list.collapse not_less_eq_eq)
+  	using Suc.prems apply (meson drop_eq_Nil in_set_dropD list.set_sel(1) not_less_eq_eq)
+  	using Suc.prems finite_expr_idset refc_rotate_finite ys apply (metis Suc_leD)
+  	using Suc.prems apply (metis drop_eq_Nil in_set_dropD list.set_sel(1) not_less_eq_eq)
+  	done
+
+(*
+	sat (n_comp n refc_rotate xs)
+		\<longleftrightarrow> sat ((drop n xs) @ ys)
+		\<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))
+		\<longleftrightarrow> sat ((fst (refc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))
+		\<longleftrightarrow> sat (tl (drop n xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
+		\<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
+		\<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)
+*)
+
+  have sat_ys: "sat (n_comp n refc_rotate xs) \<longleftrightarrow> sat ((drop n xs) @ ys)"
+  	using ys by simp
+  also have step1: "... \<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))"
+  	using Suc.prems(3) by (metis Cons_eq_appendI drop_eq_Nil2 hd_Cons_tl not_less_eq_eq)
+  also have step2: "... \<longleftrightarrow> sat ((fst (refc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))"
+  	using sat_cp calculation sat_n by arith
+  also have step3: "... \<longleftrightarrow> sat (tl (drop n xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))"
+  	using sat_rotate_append by fastforce
+  also have step4: "... \<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))"
+  	by (simp add: drop_Suc tl_drop)
+  also have "... \<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)"
+  	using ys_drop_suc sat_ys ys Suc.prems(3) by (metis Suc_le_lessD)
+
+  finally show "sat (n_comp (Suc n) refc_rotate xs)"
+  	using sat_n sat_ys by blast
+qed
+
+lemma "sat ((n_comp (length xs) refc_rotate) xs)"
+
+
+
+
+lemma
+	assumes "sat xs"
+	shows "sat (map_rotate_carry (length xs) refc xs (idset (\<Union>(set xs))))"
+	using assms unfolding refc_def
+	apply (induction "length xs" "refc :: 'a lit set \<Rightarrow> 'a set \<Rightarrow> 'a lit set list \<times> 'a set" xs "idset (\<Union>(set xs))" rule: map_rotate_carry.induct)
+		 apply (auto simp add: Let_def split: if_splits)
+	oops
+
+term rotate
+
+lemma
+	assumes "sat xs" "\<forall>c \<in> set xs. finite c \<and> card c \<ge> 4"
+	shows "sat (fst (fold (\<lambda>c (ret, vars). (ret @ fst (refc c vars), snd (refc c vars) \<union> vars)) xs ([], idset (\<Union>(set xs)))))"
+	using assms
+proof (induction xs)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons a xs)
+
+  hence "sat (a # (fst (fold (\<lambda>c (ret, vars). (ret @ fst (refc c vars), snd (refc c vars) \<union> vars)) xs ([], idset (\<Union>(set xs))))))"
+  	
+
+  then show ?case sorry
+qed
+	
+	oops
+
+
+proof (induction "length xs" arbitrary: xs)
+  case 0
+  then show ?case by simp
+next
+  case (Suc n)
+
+  thm Suc.hyps
+  have "sat (fst (fold (\<lambda>c (ret, vars). (ret @ fst (refc c vars), snd (refc c vars) \<union> vars)) (tl xs) ([], idset (\<Union> (set (tl xs))))))"
+  	apply (rule Suc.hyps(1))
+  	using Suc.hyps apply simp
+  	using Suc.prems(1) sat_tl apply blast
+  	using Suc.prems(2) apply (metis list.set_sel(2) tl_Nil)
+  	done
+
+  let ?rest = "fst (fold (\<lambda>c (ret, vars). (ret @ fst (refc c vars), snd (refc c vars) \<union> vars)) (tl xs) ([], idset (\<Union>(set (tl xs)))))"
+  let ?vars = "snd (fold (\<lambda>c (ret, vars). (ret @ fst (refc c vars), snd (refc c vars) \<union> vars)) xs ([], idset (\<Union>(set xs))))"
+
+
+  have "fst (fold (\<lambda>c (ret, vars). (ret @ fst (refc c vars), snd (refc c vars) \<union> vars)) xs ([], idset (\<Union>(set xs))))
+						= fst (refc (hd xs) (snd (refc (hd xs) ?vars) \<union> ?vars)) @ ?rest"
+
+  	oops
+
+  have "sat xs"
+  	using Suc.prems by simp
+  hence "sat (butlast xs @ (last xs # []))"
+  	by (metis Suc.hyps(2) append_butlast_last_id list.size(3) old.nat.distinct(1))
+  hence tmp: "sat (last xs # butlast xs)"
+  	sorry
+
+  have "sat (fst (refc (last xs) ?vars) @ butlast xs)"
+  	apply (rule checkpoint)
+  	using tmp apply simp
+  		 defer
+  		 apply (metis Suc.hyps(2) Suc.prems(2) last_in_set list.size(3) old.nat.distinct(1))
+  	using Suc.prems(2)
+
+  	oops
+
+
+
+  then show ?case sorry
+qed
+
+
+proof (induction xs)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons c xs)
+
+  thm Cons.IH
+  have rest: "sat (fst (fold (\<lambda>c (ret, vars). (fst (refc c vars) @ ret, snd (refc c vars) \<union> vars)) xs ([], idset (\<Union>(set xs)))))"
+  	apply (rule Cons.IH)
+  	using Cons.prems sat_tl apply fastforce
+  	using Cons.prems apply simp
+  	done
+
+  let ?rest = "fst (fold (\<lambda>c (ret, vars). (fst (refc c vars) @ ret, snd (refc c vars) \<union> vars)) xs ([], idset (\<Union>(set xs))))"
+  let ?vars = "snd (fold (\<lambda>c (ret, vars). (fst (refc c vars) @ ret, snd (refc c vars) \<union> vars)) xs ([], idset (\<Union>(set xs))))"
+  
+  have "sat (fst (refc c ?vars) @ ?rest)"
+  	apply (rule checkpoint)
+
+  then show ?case 
 qed
 
 
