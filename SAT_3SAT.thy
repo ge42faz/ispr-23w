@@ -5151,15 +5151,130 @@ next
 	qed
 qed
 
+find_theorems "length (drop ?n ?xs)"
 
-lemma
+lemma refc_rotate_card_3:
+	assumes "sat xs" "\<forall>c \<in> set xs. finite c" "n \<le> length xs"
+	shows "\<forall>c \<in> set (drop (length xs - n) (n_comp n refc_rotate xs)). card c \<le> 3"
+	using assms
+proof (induction n arbitrary: xs)
+  case 0
+  then show ?case by simp
+next
+  case (Suc n)
+
+  have "\<exists>ys. n_comp n refc_rotate xs = (drop n xs) @ ys"
+  	using ys_drop Suc.prems(3) Suc_leD by blast
+
+  then obtain ys where ys: "n_comp n refc_rotate xs = (drop n xs) @ ys"
+  	by blast
+
+  have expand_suc: "n_comp (Suc n) refc_rotate xs = (drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+  	apply (rule ys_drop_suc)
+  	using Suc.prems ys by arith+
+
+  thus ?case
+  proof (intro ballI)
+  	fix c
+  	assume c: "c \<in> set (drop (length xs - (Suc n)) (n_comp (Suc n) refc_rotate xs))"
+
+		hence ys_alt: "ys = (drop (length xs - n) (n_comp n refc_rotate xs))"
+			using ys by simp
+
+		hence "c \<in> set (ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys))))))"
+			using expand_suc ys c by simp
+
+  	then consider (set_ys) "c \<in> set ys"
+			| (rear) "c \<in> set (fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys))))))"
+			using expand_suc by fastforce
+		thus "card c \<le> 3"
+		proof cases
+			case set_ys
+			thm Suc.IH
+			have "\<forall>c \<in> set (drop (length xs - n) (n_comp n refc_rotate xs)). card c \<le> 3"
+				apply (rule Suc.IH)
+				using Suc.prems by simp+
+
+			moreover have "c \<in> set (drop (length xs - n) (n_comp n refc_rotate xs))"
+				using set_ys ys_alt by blast
+
+			ultimately show ?thesis by blast
+		next
+			case rear
+
+			let ?vars = "idset (\<Union> (set (drop n xs @ ys)))"
+			let ?s = "stock (card (hd (drop n xs)) - 3) ?vars"
+
+			consider (gt4) "card (hd (drop n xs)) \<ge> 4"
+				| (le3) "card (hd (drop n xs)) \<le> 3"
+				by arith
+			thus ?thesis
+			proof cases
+				case gt4
+
+				have aux1: "set (tl (rev ?s)) \<inter> hd (drop n xs) = {}"
+					apply (rule refc_stock_clause_disj)
+					unfolding refc_def using assms apply (simp add: Let_def split: if_splits)
+						apply (metis Suc.prems(2) Suc.prems(3) Suc_leD finite_expr_idset refc_rotate_finite ys)
+					using gt4 apply simp
+					using idset_iff apply (smt (verit) Suc.prems(3) UnionI append_is_Nil_conv drop_eq_Nil hd_append2 list.set_sel(1) not_less_eq_eq subset_iff)
+					done
+		
+				have aux2: "last ?s \<notin> set (tl (rev ?s)) \<union> hd (drop n xs)"
+					apply (rule refc_init_uniq)
+					unfolding refc_def using assms apply (simp add: Let_def split: if_splits)
+						apply (metis Suc.prems(2) Suc.prems(3) Suc_leD finite_expr_idset refc_rotate_finite ys)
+					using gt4 apply simp
+					using idset_iff apply (smt (verit) Suc.prems(3) UnionI append_is_Nil_conv drop_eq_Nil hd_append2 list.set_sel(1) not_less_eq_eq subset_iff)
+					done
+		
+				thm stock_length
+				have stock_len: "length (stock (card (hd (drop n xs)) - 3) ?vars) = 2 * (card (hd (drop n xs)) - 3)"
+					by (rule stock_length) (metis Suc.prems(2) Suc.prems(3) Suc_leD finite_expr_idset refc_rotate_finite ys)
+
+				thm splc_card_3
+				have "card c = 3"
+					apply (rule splc_card_3[where ?c' = c and ?vars = ?vars and ?c = "hd (drop n xs)"
+									and ?s = ?s and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+									apply (meson Suc.prems(2) Suc.prems(3) drop_eq_Nil hd_in_set in_set_dropD not_less_eq_eq)
+								 apply simp
+								apply simp
+					using stock_len apply simp
+							apply (metis fst_conv list.sel(2) rear refc_def rev.simps(1) splc.simps(1) stock_le3)
+					using gt4 apply simp
+						apply (metis Suc.prems(2) Suc.prems(3) Suc_leD finite_expr_idset refc_rotate_finite ys)
+					using aux2 apply simp
+					using aux1 apply simp
+					done
+	
+				thus ?thesis
+					using card.infinite by fastforce
+			next
+				case le3
+				thus ?thesis using rear refc_def
+					by (metis empty_iff empty_set fst_conv set_ConsD)
+			qed
+		qed
+	qed
+qed
+
+
+
+lemma transform_sat:
 	assumes "sat xs" "\<forall>c \<in> set xs. finite c"
 	shows "sat (n_comp (length xs) refc_rotate xs)"
 	using assms refc_rotate_sat by blast
 
-lemma
+find_theorems drop 0
+lemma transform_le3:
 	assumes "sat xs" "\<forall>c \<in> set xs. finite c"
-	shows "\<forall>c \<in> set (n_comp (length xs) refc_rotate xs). card c = 3"
+	shows "\<forall>c \<in> set (n_comp (length xs) refc_rotate xs). card c \<le> 3"
+	using assms refc_rotate_card_3 drop_0 by force
+
+lemma sat_to_le3sat:
+	assumes "sat xs" "\<forall>c \<in> set xs. finite c"
+	shows "le3sat (n_comp (length xs) refc_rotate xs)"
+	using assms transform_sat transform_le3 unfolding le3sat_def by blast
 
 
 
