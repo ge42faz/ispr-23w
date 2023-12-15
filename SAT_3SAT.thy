@@ -4722,7 +4722,24 @@ proof -
 				thus ?thesis using last last_pos ult by blast
 			next
 				case prim
-				then show ?thesis sorry
+				thm splc_aux_clause_first
+				have "\<exists>v. Pos v \<in> last (butlast (fst (refc c vars))) \<and> last ?s = Pos v"
+					apply (rule splc_aux_clause_first[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+					using assms aux1 aux2 aux3 stock_length unfolding refc_def
+					by (fastforce simp add: Let_def split: if_splits)+
+
+				then obtain x where x_pos: "Pos x \<in> last (butlast (fst (refc c vars)))" and "last ?s = Pos x"
+					by blast
+
+				hence "Pos x \<in> set ?s"
+					using v_init
+					by (metis last_in_set last_rev lit.distinct(1) rev.simps(1))
+				hence "x \<in> idset (set ?s)"
+					using idset_iff by metis
+				hence "(vmap_new\<up>) (Pos x)"
+					using lift_pos by simp
+
+				thus ?thesis using x_pos prim by blast
 			next
 				case mid
 
