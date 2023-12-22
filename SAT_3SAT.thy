@@ -29,14 +29,6 @@ fun ident :: "'a lit \<Rightarrow> 'a"
 definition idset :: "'a lit set \<Rightarrow> 'a set"
 	where "idset clause = {ident x | x. x \<in> clause}"
 
-fun varset :: "'a set list \<Rightarrow> 'a set"
-	where "varset [] = {}"
-	| "varset (c # cs) = c \<union> (varset cs)"
-
-definition gen_uniq :: "'a set \<Rightarrow> 'a"
-	where "gen_uniq var_set = (SOME x. x \<notin> var_set)"
-
-
 definition pop :: "'a lit set \<Rightarrow> 'a lit * 'a lit set"
 	where "pop c = (
 		let elem = SOME x. x \<in> c in
@@ -2411,28 +2403,8 @@ proof (intro ballI)
 		by blast
 qed
 
-lemma test__:
-	assumes "\<exists>l \<in> c. (vmap\<up>) l" "finite c" "finite vars" "vars \<subseteq> idset c"
-	shows "\<not> vmap \<Turnstile> fst (refc c vars)"
-	using assms unfolding models_def refc_def
-	oops
-
-
-lemma test_:
-	assumes "vmap \<Turnstile> fst (refc c vars)" "finite c" "finite vars" "vars \<subseteq> idset c"
-	shows "\<exists>l \<in> c. (vmap\<up>) l"
-	using assms
-	oops
-
-lemma test:
-	assumes "vmap \<Turnstile> fst (refc c vars)"
-	shows "vmap \<Turnstile> c # []"
-	using assms unfolding models_def refc_def
-	oops
-
 lemma ex_mid_lift: "(vmap\<up>) (Pos x) \<longleftrightarrow> \<not>(vmap\<up>) (Neg x)"
 	unfolding lift_def by auto
-
 
 lemma splc_aux_hd:
 	assumes "finite c" "s = stock (card c - 3) vars" "s' = tl (rev s)" "length s' = 2 * (card c - 3) - 1"
@@ -4140,17 +4112,6 @@ lemma checkpoint:
 	using assms checkpoint1 checkpoint2 unfolding sat_def models_def
 	by fast
 
-
-
-
-fun fold_rotate :: "nat \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'a list \<Rightarrow> 'b \<Rightarrow> 'b"
-	where "fold_rotate 0 f (x # xs) init = init"
-	| "fold_rotate (Suc n) f (x # xs) init = fold_rotate n f xs (f x init)"
-
-fun map_rotate_carry :: "nat \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> 'a list * 'b) \<Rightarrow> 'a list \<Rightarrow> 'b \<Rightarrow> 'a list"
-	where "map_rotate_carry 0 f (x # xs) carry = x # xs"
-	| "map_rotate_carry (Suc n) f (x # xs) carry = map_rotate_carry n f (xs @ x # []) (snd (f x carry)) @ fst (f x carry)"
-
 fun n_comp :: "nat \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> ('a \<Rightarrow> 'a)"
 	where "n_comp 0 f = id"
 	| "n_comp (Suc n) f = f \<circ> n_comp n f"
@@ -4736,6 +4697,20 @@ lemma sat_reduce_le3sat: "is_reduction preproc sat_pset le3sat_pset"
 	unfolding is_reduction_def preproc_def sat_pset_def le3sat_pset_def to_le3sat_def
 	apply (auto simp add: Let_def has_empty_sat has_empty_le3sat split: if_splits)
 	using SAT_iff_le3SAT preproc_def to_le3sat_def by metis+
+
+
+(*
+fun augc :: "('a :: fresh) lit list \<Rightarrow> 'a set \<Rightarrow> 'a lit set list * 'a set"
+	where "augc (x # []) vars = (
+		let v1 = fresh vars undefined in
+		let v2 = fresh (insert v1 vars) undefined in
+		({Pos v1, Pos v2, x} # {Pos v1, Neg v2, x} # {Neg v1, Pos v2, x} # {Neg v1, Neg v2, x} # [], {v1, v2} \<union> vars)
+	)"
+	| "augc (x # y # []) vars = (
+		let v = fresh vars undefined in
+		({Pos v, x, y} # {Neg v, x, y} # [], insert v vars)
+	)"
+*)
 
 
 
