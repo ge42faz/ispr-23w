@@ -1,9 +1,22 @@
 theory SAT_3SAT
-	imports Main "Poly_Reductions_Lib.SAT_Definition" "../Reductions" Fresh_Identifiers.Fresh_String
+	imports Main "../Reductions" Fresh_Identifiers.Fresh_String
 begin
+
+
+datatype 'a lit = Pos 'a | Neg 'a
+
+definition lift :: "('a \<Rightarrow> bool) \<Rightarrow> 'a lit \<Rightarrow> bool" ("_\<up>" 60) where
+  "lift \<sigma> \<equiv> \<lambda>l. case l of Pos x \<Rightarrow> \<sigma> x | Neg x \<Rightarrow> \<not> \<sigma> x"
+
+definition models :: "('a \<Rightarrow> bool) \<Rightarrow> 'a lit set list \<Rightarrow> bool" (infixl "\<Turnstile>" 55) where
+  "\<sigma> \<Turnstile> F \<equiv> \<forall>cls \<in> set F. \<exists>l \<in> cls. (\<sigma>\<up>) l"
+
+definition sat :: "'a lit set list \<Rightarrow> bool" where
+  "sat F \<equiv> (\<exists>\<sigma>. \<sigma> \<Turnstile> F) \<and> (\<forall>cls \<in> set F. card cls > 0)"
 
 definition le3sat :: "'a lit set list \<Rightarrow> bool"
 	where "le3sat expr = (sat expr \<and> (\<forall>clause \<in> set expr. card clause \<le> 3))"
+
 
 lemma "sat Nil"
 	unfolding sat_def models_def 
@@ -2349,10 +2362,11 @@ lemma vmap_true_pos_lift: "vmap v \<Longrightarrow> l = Pos v \<Longrightarrow> 
 lemma vmap_false_neg_lift: "\<not>vmap v \<Longrightarrow> l = Neg v \<Longrightarrow> (vmap\<up>) l"
 	unfolding lift_def by simp
 
-
+(*
 lemma sat_single: "c \<noteq> {} \<Longrightarrow> sat (c # [])"
 	unfolding sat_def models_def 
 	by (metis empty_set ex_in_conv lift_def lit.case_distrib set_ConsD)
+*)
 
 lemma sat_tl: "sat expr \<Longrightarrow> sat (tl expr)"
 	unfolding sat_def models_def
@@ -2719,12 +2733,12 @@ qed
 
 
 lemma reverse_checkpoint_aux: "\<not> sat (fst (refc c vars) @ xs)
-															\<longleftrightarrow> (\<forall>vmap. \<exists>c' \<in> set (fst (refc c vars) @ xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l)"
+															\<longleftrightarrow> (\<forall>vmap. \<exists>c' \<in> set (fst (refc c vars) @ xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l) \<or> \<not>(\<forall>c' \<in> set (fst (refc c vars) @ xs). 0 < card c')"
 	unfolding sat_def models_def by simp
 
 lemma reverse_checkpoint_le3_alt:
 	assumes "\<not> sat (c # xs)" "card c \<le> 3"
-	shows "\<forall>vmap. \<exists>c' \<in> set (fst (refc c vars) @ xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l"
+	shows "(\<forall>vmap. \<exists>c' \<in> set (fst (refc c vars) @ xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l) \<or> \<not>(\<forall>c' \<in> set (fst (refc c vars) @ xs). 0 < card c')"
 	using assms unfolding sat_def models_def refc_def
 	by (auto simp add: Let_def split: if_splits)
 
@@ -2732,17 +2746,19 @@ lemma reverse_checkpoint_le3:
 	assumes "\<not> sat (c # xs)" "card c \<le> 3"
 	shows "\<not> sat (fst (refc c vars) @ xs)"
 	using assms reverse_checkpoint_le3_alt reverse_checkpoint_aux
-	by fast
+	by metis
 
 lemma reverse_checkpoint_alt:
 	assumes "\<not> sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
+					"\<forall>c' \<in> set (c # xs). finite c'"
 	shows "\<forall>vmap. \<exists>c' \<in> set (fst (refc c vars) @ xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l"
 	using assms unfolding sat_def models_def
 proof -
 	let ?s = "stock (card c - 3) vars"
 
 	have "\<nexists>vmap. vmap \<Turnstile> c # xs"
-		using assms(1) unfolding sat_def by simp
+		using assms sat_def models_def
+		by (metis bot_nat_0.not_eq_extremum card_eq_0_iff empty_iff)
 	hence "\<nexists>vmap. \<forall>c' \<in> set (c # xs). \<exists>l \<in> c'. (vmap\<up>) l"
 		unfolding models_def by simp
 	hence "\<forall>vmap. \<not> (\<forall>c' \<in> set (c # xs). \<exists>l \<in> c'. (vmap\<up>) l)"
@@ -3033,6 +3049,7 @@ qed
 
 lemma reverse_checkpoint:
 	assumes "\<not> sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
+					"\<forall>c' \<in> set (c # xs). finite c'"
 	shows "\<not> sat (fst (refc c vars) @ xs)"
 	using assms reverse_checkpoint_alt reverse_checkpoint_aux
 	by fast
@@ -3045,9 +3062,9 @@ lemma checkpoint_le3:
 	by (auto simp add: Let_def split: if_splits)
 
 
-lemma checkpoint:
+lemma checkpoint1:
 	assumes "sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
-	shows "sat (fst (refc c vars) @ xs)"
+	shows "\<exists>vmap_new. \<forall>c' \<in> set (fst (refc c vars) @ xs). \<exists>l \<in> c'. (vmap_new\<up>) l"
 	using assms unfolding sat_def models_def
 proof -
 	let ?s = "stock (card c - 3) vars"
@@ -4066,6 +4083,66 @@ proof -
 	qed
 qed
 
+lemma checkpoint2:
+	assumes "sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
+	shows "\<forall>c' \<in> set (fst (refc c vars) @ xs). card c' > 0"
+	using assms unfolding sat_def models_def
+proof (intro ballI)
+	fix c'
+	assume "c' \<in> set (fst (refc c vars) @ xs)"
+
+	then consider (front) "c' \<in> set (fst (refc c vars))"
+		| (rear) "c' \<in> set xs"
+		by fastforce
+	thus "card c' > 0"
+	proof cases
+		case front
+		let ?s = "(stock (card c - 3) vars)"
+
+		have aux1: "set (tl (rev ?s)) \<inter> c = {}"
+			apply (rule refc_stock_clause_disj)
+			unfolding refc_def apply (simp add: Let_def split: if_splits)
+			using assms apply simp
+			using assms apply simp
+			using assms idset_iff apply (meson UnionI list.set_intros(1) subset_iff)
+			done
+	
+		have aux2: "last ?s \<notin> set (tl (rev ?s)) \<union> c"
+			apply (rule refc_init_uniq)
+			unfolding refc_def using assms apply (simp add: Let_def split: if_splits)
+			using assms apply simp
+			using assms apply simp
+			using assms idset_iff apply (meson UnionI list.set_intros(1) subset_iff)
+			done
+
+		thm splc_card_3
+		have "card c' = 3"
+			apply (rule splc_card_3[where ?c = c and ?s = ?s and ?vars = vars and ?s' = "tl (rev ?s)" and ?init = "last ?s"])
+			prefer 5 using assms front refc_def apply (metis fst_conv not_less_eq_eq numeral_eq_Suc pred_numeral_simps(2) semiring_norm(26) semiring_norm(27))
+			using assms stock_length aux1 aux2 unfolding refc_def
+			by (fastforce simp add: Let_def split: if_splits)+
+
+		thus ?thesis by simp
+	next
+		case rear
+		thus ?thesis
+			using assms sat_tl unfolding sat_def by fastforce
+	qed
+
+	have "\<forall>c' \<in> set (c # xs). card c' > 0"
+		using assms unfolding sat_def by simp
+qed
+
+
+lemma checkpoint:
+	assumes "sat (c # xs)" "vars = idset (\<Union>(set (c # xs)))" "finite c" "finite vars" "card c \<ge> 4"
+	shows "sat (fst (refc c vars) @ xs)"
+	using assms checkpoint1 checkpoint2 unfolding sat_def models_def
+	by fast
+
+
+
+
 fun fold_rotate :: "nat \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'a list \<Rightarrow> 'b \<Rightarrow> 'b"
 	where "fold_rotate 0 f (x # xs) init = init"
 	| "fold_rotate (Suc n) f (x # xs) init = fold_rotate n f xs (f x init)"
@@ -4321,6 +4398,7 @@ next
 	qed
 qed
 
+
 lemma refc_rotate_nsat:
 	assumes "\<not> sat xs" "\<forall>c \<in> set xs. finite c" "n \<le> length xs"
 	shows "\<not> sat (n_comp n refc_rotate xs)"
@@ -4356,6 +4434,7 @@ next
 			using Suc.prems apply (meson drop_eq_Nil in_set_dropD list.set_sel(1) not_less_eq_eq)
 			using Suc.prems finite_expr_idset refc_rotate_finite ys apply (metis Suc_leD)
 			using gt4 apply simp
+			using Suc.prems refc_rotate_finite ys apply (metis Suc_n_not_le_n append_Cons drop_eq_Nil2 le_SucI list.exhaust_sel nle_le)
 			done
 	
 	(*
@@ -4570,6 +4649,97 @@ definition sat_pset :: "('a :: fresh) lit set list set"
 
 definition le3sat_pset :: "('a :: fresh) lit set list set"
 	where "le3sat_pset = {expr. le3sat expr}"
+
+
+fun has_empty :: "'a lit set list \<Rightarrow> bool"
+	where "has_empty [] = False"
+	| "has_empty (x # xs) = (if card x = 0 then True else has_empty xs)"
+
+lemma has_empty: "has_empty xs \<longleftrightarrow> (\<exists>c \<in> set xs. card c = 0)"
+	by (induction xs) auto
+
+lemma has_empty_sat: "has_empty expr \<Longrightarrow> \<not> sat expr"
+proof -
+	assume "has_empty expr"
+	hence "\<exists>c \<in> set expr. card c = 0"
+		using has_empty by blast
+
+	then obtain c where c_expr: "c \<in> set expr" and c_card: "card c = 0"
+		by blast
+
+	find_theorems "card ?A = 0"
+	hence "infinite c \<or> (c = {})"
+		using c_card card_eq_0_iff by meson
+		
+	thus "\<not> sat expr"
+	proof (elim disjE)
+		assume "infinite c"
+		thus "\<not> sat expr"
+			unfolding sat_def using c_expr by fastforce
+	next
+		assume "c = {}"
+		thus "\<not> sat expr"
+			unfolding sat_def using c_expr by fastforce
+	qed
+qed
+
+lemma has_empty_le3sat: "has_empty expr \<Longrightarrow> \<not> le3sat expr"
+proof -
+	assume "has_empty expr"
+	hence "\<exists>c \<in> set expr. card c = 0"
+		using has_empty by blast
+
+	then obtain c where c_expr: "c \<in> set expr" and c_card: "card c = 0"
+		by blast
+
+	find_theorems "card ?A = 0"
+	hence "infinite c \<or> (c = {})"
+		using c_card card_eq_0_iff by meson
+		
+	thus "\<not> le3sat expr"
+	proof (elim disjE)
+		assume "infinite c"
+		thus "\<not> le3sat expr"
+			unfolding le3sat_def sat_def using c_expr by fastforce
+	next
+		assume "c = {}"
+		thus "\<not> le3sat expr"
+			unfolding le3sat_def sat_def using c_expr by fastforce
+	qed
+qed
+
+
+definition preproc :: "('a :: fresh) lit set list \<Rightarrow> 'a lit set list"
+	where "preproc expr = (if has_empty expr then [{}] else to_le3sat expr)"
+
+lemma SAT_to_le3SAT:
+	assumes "sat xs"
+	shows "le3sat (preproc xs)"
+	using assms unfolding preproc_def
+	apply (auto simp add: Let_def has_empty_sat split: if_splits)
+	using sat_def sat_to_le3sat to_le3sat_def
+	by (metis card_gt_0_iff)
+
+lemma le3SAT_to_SAT:
+	assumes "\<not> sat xs"
+	shows "\<not> le3sat (preproc xs)"
+	using assms unfolding preproc_def
+	apply (auto simp add: Let_def split: if_splits)
+	apply (simp add: le3sat_def sat_def)
+	using has_empty le3sat_to_sat to_le3sat_def
+	by (metis card.infinite)
+
+lemma SAT_iff_le3SAT: "sat xs \<longleftrightarrow> le3sat (preproc xs)"
+	using SAT_to_le3SAT le3SAT_to_SAT by blast
+
+lemma sat_reduce_le3sat: "is_reduction preproc sat_pset le3sat_pset"
+	unfolding is_reduction_def preproc_def sat_pset_def le3sat_pset_def to_le3sat_def
+	apply (auto simp add: Let_def has_empty_sat has_empty_le3sat split: if_splits)
+	using SAT_iff_le3SAT preproc_def to_le3sat_def by metis+
+
+
+
+
 
 	
 
