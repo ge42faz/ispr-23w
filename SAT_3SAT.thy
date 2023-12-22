@@ -4112,10 +4112,6 @@ lemma checkpoint:
 	using assms checkpoint1 checkpoint2 unfolding sat_def models_def
 	by fast
 
-fun n_comp :: "nat \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> ('a \<Rightarrow> 'a)"
-	where "n_comp 0 f = id"
-	| "n_comp (Suc n) f = f \<circ> n_comp n f"
-
 fun refc_rotate
 	where "refc_rotate [] = []"
 	| "refc_rotate (x # xs) = xs @ (fst (refc x (idset (\<Union>(set (x # xs))))))"
@@ -4144,19 +4140,20 @@ lemma
 	using assms checkpoint sat_rotate_append finite_expr_idset
 	by (metis list.set_intros(1) refc_rotate.simps(2))
 
-lemma n_comp_refc_rotate: "(n_comp (Suc n) refc_rotate) (x # xs) = (n_comp n refc_rotate) (xs @ (fst (refc x (idset (\<Union>(set (x # xs)))))))"
-	by (induction n refc_rotate arbitrary: x xs rule: n_comp.induct) auto
 
-lemma l: "(n_comp (Suc n) refc_rotate) xs = refc_rotate (n_comp n refc_rotate xs)"
+lemma n_comp_refc_rotate: "(refc_rotate ^^ Suc n) (x # xs) = (refc_rotate ^^ n) (xs @ (fst (refc x (idset (\<Union>(set (x # xs)))))))"
+	by (induction n arbitrary: x xs) auto
+
+lemma l: "(refc_rotate ^^ Suc n) xs = refc_rotate ((refc_rotate ^^ n) xs)"
 	by simp
 
-lemma ys_drop: "n \<le> length xs \<Longrightarrow> \<exists>ys. n_comp n refc_rotate xs = (drop n xs) @ ys"
+lemma ys_drop: "n \<le> length xs \<Longrightarrow> \<exists>ys. (refc_rotate ^^ n) xs = (drop n xs) @ ys"
 	apply (induction n arbitrary: xs)
 	 apply auto
 	by (smt (verit) append.assoc drop_Suc drop_eq_Nil less_Suc_eq_le linorder_not_le list.sel(3) not_less_iff_gr_or_eq refc_rotate.elims tl_append2 tl_drop)
 
-lemma ys_drop_suc: "\<lbrakk> n < length xs; n_comp n refc_rotate xs = (drop n xs) @ ys \<rbrakk>
-					\<Longrightarrow> n_comp (Suc n) refc_rotate xs = (drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+lemma ys_drop_suc: "\<lbrakk> n < length xs; (refc_rotate ^^ n) xs = (drop n xs) @ ys \<rbrakk>
+					\<Longrightarrow> (refc_rotate ^^ Suc n) xs = drop (Suc n) xs @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
 	apply (induction n arbitrary: xs ys)
 	 apply auto
 	 apply (metis drop0 drop_Suc list.exhaust_sel refc_rotate.simps(2))
@@ -4164,7 +4161,7 @@ lemma ys_drop_suc: "\<lbrakk> n < length xs; n_comp n refc_rotate xs = (drop n x
 
 lemma refc_rotate_finite:
 	assumes "\<forall>c \<in> set xs. finite c" "n \<le> length xs"
-	shows "\<forall>c \<in> set (n_comp n refc_rotate xs). finite c"
+	shows "\<forall>c \<in> set ((refc_rotate ^^ n) xs). finite c"
 	using assms
 proof (induction n arbitrary: xs)
   case 0
@@ -4174,18 +4171,18 @@ next
 
   hence "n \<le> length xs"
   	by arith
-  hence "\<exists>ys. n_comp n refc_rotate xs = (drop n xs) @ ys"
+  hence "\<exists>ys. (refc_rotate ^^ n) xs = (drop n xs) @ ys"
   	using ys_drop by blast
-  then obtain ys where ys: "n_comp n refc_rotate xs = (drop n xs) @ ys"
+  then obtain ys where ys: "(refc_rotate ^^ n) xs = (drop n xs) @ ys"
   	by blast
 
-  hence expand_suc: "n_comp (Suc n) refc_rotate xs = (drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+  hence expand_suc: "(refc_rotate ^^ Suc n) xs = drop (Suc n) xs @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
   	using Suc.prems(2) Suc_le_lessD ys_drop_suc by blast
 
   thus ?case
   proof (intro ballI)
   	fix c
-  	assume c: "c \<in> set (n_comp (Suc n) refc_rotate xs)"
+  	assume c: "c \<in> set ((refc_rotate ^^ Suc n) xs)"
 
   	then consider (front) "c \<in> set (drop (Suc n) xs @ ys)"
 			| (rear) "c \<in> set (fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys))))))"
@@ -4194,7 +4191,7 @@ next
 		proof cases
 			case front
 			thm Suc.IH
-			have "\<forall>c \<in> set (n_comp n refc_rotate xs). finite c"
+			have "\<forall>c \<in> set ((refc_rotate ^^ n) xs). finite c"
 				apply (rule Suc.IH)
 				using Suc.prems by auto
 
@@ -4263,7 +4260,7 @@ qed
 
 lemma refc_rotate_sat:
 	assumes "sat xs" "\<forall>c \<in> set xs. finite c" "n \<le> length xs"
-	shows "sat (n_comp n refc_rotate xs)"
+	shows "sat ((refc_rotate ^^ n) xs)"
 	using assms
 proof (induction n arbitrary: xs)
   case 0
@@ -4271,21 +4268,21 @@ proof (induction n arbitrary: xs)
 next
   case (Suc n)
 
-  have sat_n: "sat ((n_comp n refc_rotate) xs)"
+  have sat_n: "sat ((refc_rotate ^^ n) xs)"
   	apply (rule Suc.IH)
   	using Suc.prems by auto
 
-  then obtain ys where ys: "n_comp n refc_rotate xs = (drop n xs) @ ys"
+  then obtain ys where ys: "(refc_rotate ^^ n) xs = (drop n xs) @ ys"
   	by (metis drop_all nle_le self_append_conv2 ys_drop)
 
-  hence "sat (n_comp n refc_rotate xs) = sat ((drop n xs) @ ys)"
+  hence "sat ((refc_rotate ^^ n) xs) = sat (drop n xs @ ys)"
   	by simp
 
 	let ?vars = "idset (\<Union>(set (drop n xs @ ys)))"
 	consider (gt4) "card (hd (drop n xs)) \<ge> 4"
 		| (le3) "card (hd (drop n xs)) \<le> 3"
 		by arith
-	thus "sat (n_comp (Suc n) refc_rotate xs)"
+	thus "sat ((refc_rotate ^^ Suc n) xs)"
 	proof cases
 		case gt4
 
@@ -4298,17 +4295,7 @@ next
 			using gt4 apply simp
 			done
 	
-	(*
-		sat (n_comp n refc_rotate xs)
-			\<longleftrightarrow> sat ((drop n xs) @ ys)
-			\<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat ((fst (refc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat (tl (drop n xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)
-	*)
-	
-		have sat_ys: "sat (n_comp n refc_rotate xs) \<longleftrightarrow> sat ((drop n xs) @ ys)"
+		have sat_ys: "sat ((refc_rotate ^^ n) xs) \<longleftrightarrow> sat (drop n xs @ ys)"
 			using ys by simp
 		also have step1: "... \<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))"
 			using Suc.prems(3) by (metis Cons_eq_appendI drop_eq_Nil2 hd_Cons_tl not_less_eq_eq)
@@ -4318,10 +4305,10 @@ next
 			using sat_rotate_append by fastforce
 		also have step4: "... \<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))"
 			by (simp add: drop_Suc tl_drop)
-		also have "... \<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)"
+		also have "... \<longleftrightarrow> sat ((refc_rotate ^^ Suc n) xs)"
 			using ys_drop_suc sat_ys ys Suc.prems(3) by (metis Suc_le_lessD)
 	
-		finally show "sat (n_comp (Suc n) refc_rotate xs)"
+		finally show "sat ((refc_rotate ^^ Suc n) xs)"
 			using sat_n sat_ys by blast
 	next
 		case le3
@@ -4331,17 +4318,7 @@ next
 			using le3 apply simp
 			done
 	
-	(*
-		sat (n_comp n refc_rotate xs)
-			\<longleftrightarrow> sat ((drop n xs) @ ys)
-			\<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat ((fst (refc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat (tl (drop n xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)
-	*)
-	
-		have sat_ys: "sat (n_comp n refc_rotate xs) \<longleftrightarrow> sat ((drop n xs) @ ys)"
+		have sat_ys: "sat ((refc_rotate ^^ n) xs) \<longleftrightarrow> sat (drop n xs @ ys)"
 			using ys by simp
 		also have step1: "... \<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))"
 			using Suc.prems(3) by (metis Cons_eq_appendI drop_eq_Nil2 hd_Cons_tl not_less_eq_eq)
@@ -4351,10 +4328,10 @@ next
 			using sat_rotate_append by fastforce
 		also have step4: "... \<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))"
 			by (simp add: drop_Suc tl_drop)
-		also have "... \<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)"
+		also have "... \<longleftrightarrow> sat ((refc_rotate ^^ Suc n) xs)"
 			using ys_drop_suc sat_ys ys Suc.prems(3) by (metis Suc_le_lessD)
 	
-		finally show "sat (n_comp (Suc n) refc_rotate xs)"
+		finally show "sat ((refc_rotate ^^ Suc n) xs)"
 			using sat_n sat_ys by blast
 	qed
 qed
@@ -4362,7 +4339,7 @@ qed
 
 lemma refc_rotate_nsat:
 	assumes "\<not> sat xs" "\<forall>c \<in> set xs. finite c" "n \<le> length xs"
-	shows "\<not> sat (n_comp n refc_rotate xs)"
+	shows "\<not> sat ((refc_rotate ^^ n) xs)"
 	using assms
 proof (induction n arbitrary: xs)
   case 0
@@ -4370,21 +4347,21 @@ proof (induction n arbitrary: xs)
 next
   case (Suc n)
 
-  have sat_n: "\<not> sat ((n_comp n refc_rotate) xs)"
+  have sat_n: "\<not> sat ((refc_rotate ^^ n) xs)"
   	apply (rule Suc.IH)
   	using Suc.prems by auto
 
-  then obtain ys where ys: "n_comp n refc_rotate xs = (drop n xs) @ ys"
+  then obtain ys where ys: "(refc_rotate ^^ n) xs = drop n xs @ ys"
   	by (metis drop_all nle_le self_append_conv2 ys_drop)
 
-  hence "sat (n_comp n refc_rotate xs) \<longleftrightarrow> sat ((drop n xs) @ ys)"
+  hence "sat ((refc_rotate ^^ n) xs) \<longleftrightarrow> sat (drop n xs @ ys)"
   	by simp
 
 	let ?vars = "idset (\<Union>(set (drop n xs @ ys)))"
 	consider (gt4) "card (hd (drop n xs)) \<ge> 4"
 		| (le3) "card (hd (drop n xs)) \<le> 3"
 		by arith
-	thus "\<not> sat (n_comp (Suc n) refc_rotate xs)"
+	thus "\<not> sat ((refc_rotate ^^ Suc n) xs)"
 	proof cases
 		case gt4
 
@@ -4397,18 +4374,8 @@ next
 			using gt4 apply simp
 			using Suc.prems refc_rotate_finite ys apply (metis Suc_n_not_le_n append_Cons drop_eq_Nil2 le_SucI list.exhaust_sel nle_le)
 			done
-	
-	(*
-		sat (n_comp n refc_rotate xs)
-			\<longleftrightarrow> sat ((drop n xs) @ ys)
-			\<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat ((fst (refc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat (tl (drop n xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)
-	*)
-	
-		have sat_ys: "sat (n_comp n refc_rotate xs) \<longleftrightarrow> sat ((drop n xs) @ ys)"
+
+		have sat_ys: "sat ((refc_rotate ^^ n) xs) \<longleftrightarrow> sat (drop n xs @ ys)"
 			using ys by simp
 		also have step1: "... \<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))"
 			using Suc.prems(3) by (metis Cons_eq_appendI drop_eq_Nil2 hd_Cons_tl not_less_eq_eq)
@@ -4418,10 +4385,10 @@ next
 			using sat_rotate_append by fastforce
 		also have step4: "... \<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))"
 			by (simp add: drop_Suc tl_drop)
-		also have "... \<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)"
+		also have "... \<longleftrightarrow> sat ((refc_rotate ^^ Suc n) xs)"
 			using ys_drop_suc sat_ys ys Suc.prems(3) by (metis Suc_le_lessD)
 	
-		finally show "\<not> sat (n_comp (Suc n) refc_rotate xs)"
+		finally show "\<not> sat ((refc_rotate ^^ Suc n) xs)"
 			using sat_n sat_ys by blast
 	next
 		case le3
@@ -4431,17 +4398,7 @@ next
 			using le3 apply simp
 			done
 	
-	(*
-		sat (n_comp n refc_rotate xs)
-			\<longleftrightarrow> sat ((drop n xs) @ ys)
-			\<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat ((fst (refc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))
-			\<longleftrightarrow> sat (tl (drop n xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))
-			\<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)
-	*)
-	
-		have sat_ys: "sat (n_comp n refc_rotate xs) \<longleftrightarrow> sat ((drop n xs) @ ys)"
+		have sat_ys: "sat ((refc_rotate ^^ n) xs) \<longleftrightarrow> sat (drop n xs @ ys)"
 			using ys by simp
 		also have step1: "... \<longleftrightarrow> sat (hd (drop n xs) # (tl (drop n xs) @ ys))"
 			using Suc.prems(3) by (metis Cons_eq_appendI drop_eq_Nil2 hd_Cons_tl not_less_eq_eq)
@@ -4451,10 +4408,10 @@ next
 			using sat_rotate_append by fastforce
 		also have step4: "... \<longleftrightarrow> sat ((drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) ?vars))"
 			by (simp add: drop_Suc tl_drop)
-		also have "... \<longleftrightarrow> sat (n_comp (Suc n) refc_rotate xs)"
+		also have "... \<longleftrightarrow> sat ((refc_rotate ^^ Suc n) xs)"
 			using ys_drop_suc sat_ys ys Suc.prems(3) by (metis Suc_le_lessD)
 	
-		finally show "\<not> sat (n_comp (Suc n) refc_rotate xs)"
+		finally show "\<not> sat ((refc_rotate ^^ Suc n) xs)"
 			using sat_n sat_ys by blast
 	qed
 qed
@@ -4466,7 +4423,7 @@ find_theorems "length (drop ?n ?xs)"
 
 lemma refc_rotate_card_3:
 	assumes "\<forall>c \<in> set xs. finite c" "n \<le> length xs"
-	shows "\<forall>c \<in> set (drop (length xs - n) (n_comp n refc_rotate xs)). card c \<le> 3"
+	shows "\<forall>c \<in> set (drop (length xs - n) ((refc_rotate ^^ n) xs)). card c \<le> 3"
 	using assms
 proof (induction n arbitrary: xs)
   case 0
@@ -4474,22 +4431,22 @@ proof (induction n arbitrary: xs)
 next
   case (Suc n)
 
-  have "\<exists>ys. n_comp n refc_rotate xs = (drop n xs) @ ys"
+  have "\<exists>ys. (refc_rotate ^^ n) xs = drop n xs @ ys"
   	using ys_drop Suc.prems Suc_leD by blast
 
-  then obtain ys where ys: "n_comp n refc_rotate xs = (drop n xs) @ ys"
+  then obtain ys where ys: "(refc_rotate ^^ n) xs = drop n xs @ ys"
   	by blast
 
-  have expand_suc: "n_comp (Suc n) refc_rotate xs = (drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+  have expand_suc: "(refc_rotate ^^ Suc n) xs = (drop (Suc n) xs) @ ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
   	apply (rule ys_drop_suc)
   	using Suc.prems ys by arith+
 
   thus ?case
   proof (intro ballI)
   	fix c
-  	assume c: "c \<in> set (drop (length xs - (Suc n)) (n_comp (Suc n) refc_rotate xs))"
+  	assume c: "c \<in> set (drop (length xs - (Suc n)) ((refc_rotate ^^ Suc n) xs))"
 
-		hence ys_alt: "ys = (drop (length xs - n) (n_comp n refc_rotate xs))"
+		hence ys_alt: "ys = (drop (length xs - n) ((refc_rotate ^^ n) xs))"
 			using ys by simp
 
 		hence "c \<in> set (ys @ fst (refc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys))))))"
@@ -4502,11 +4459,11 @@ next
 		proof cases
 			case set_ys
 			thm Suc.IH
-			have "\<forall>c \<in> set (drop (length xs - n) (n_comp n refc_rotate xs)). card c \<le> 3"
+			have "\<forall>c \<in> set (drop (length xs - n) ((refc_rotate ^^ n) xs)). card c \<le> 3"
 				apply (rule Suc.IH)
 				using Suc.prems by simp+
 
-			moreover have "c \<in> set (drop (length xs - n) (n_comp n refc_rotate xs))"
+			moreover have "c \<in> set (drop (length xs - n) ((refc_rotate ^^ n) xs))"
 				using set_ys ys_alt by blast
 
 			ultimately show ?thesis by blast
@@ -4573,37 +4530,37 @@ qed
 
 lemma transform_sat:
 	assumes "sat xs" "\<forall>c \<in> set xs. finite c"
-	shows "sat (n_comp (length xs) refc_rotate xs)"
+	shows "sat ((refc_rotate ^^ length xs) xs)"
 	using assms refc_rotate_sat by blast
 
 lemma transform_nsat:
 	assumes "\<not> sat xs" "\<forall>c \<in> set xs. finite c"
-	shows "\<not> sat (n_comp (length xs) refc_rotate xs)"
+	shows "\<not> sat ((refc_rotate ^^ length xs) xs)"
 	using assms refc_rotate_nsat by blast
 
 find_theorems drop 0
 lemma transform_le3:
 	assumes "sat xs" "\<forall>c \<in> set xs. finite c"
-	shows "\<forall>c \<in> set (n_comp (length xs) refc_rotate xs). card c \<le> 3"
+	shows "\<forall>c \<in> set ((refc_rotate ^^ length xs) xs). card c \<le> 3"
 	using assms refc_rotate_card_3 drop_0 by force
 
 lemma sat_to_le3sat:
 	assumes "sat xs" "\<forall>c \<in> set xs. finite c"
-	shows "le3sat (n_comp (length xs) refc_rotate xs)"
+	shows "le3sat ((refc_rotate ^^ length xs) xs)"
 	using assms transform_sat transform_le3 unfolding le3sat_def by blast
 
 lemma le3sat_to_sat:
 	assumes "\<not> sat xs" "\<forall>c \<in> set xs. finite c"
-	shows "\<not> le3sat (n_comp (length xs) refc_rotate xs)"
+	shows "\<not> le3sat ((refc_rotate ^^ length xs) xs)"
 	using assms transform_nsat transform_le3 unfolding le3sat_def by blast
 
 lemma sat_iff_le3sat:
 	assumes "\<forall>c \<in> set xs. finite c"
-	shows "sat xs \<longleftrightarrow> le3sat (n_comp (length xs) refc_rotate xs)"
+	shows "sat xs \<longleftrightarrow> le3sat ((refc_rotate ^^ length xs) xs)"
 	using assms sat_to_le3sat le3sat_to_sat by blast
 
 definition to_le3sat :: "('a :: fresh) lit set list \<Rightarrow> 'a lit set list"
-	where "to_le3sat xs = n_comp (length xs) refc_rotate xs"
+	where "to_le3sat xs = (refc_rotate ^^ length xs) xs"
 
 definition sat_pset :: "('a :: fresh) lit set list set"
 	where "sat_pset = {expr. sat expr}"
