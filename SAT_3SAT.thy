@@ -5023,17 +5023,180 @@ next
 	qed
 qed
 
+
+lemma reverse_checkpoint_augc_aux:
+	assumes "\<forall>vmap. \<exists>c' \<in> set (c # xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l" "card c > 0" "card c \<le> 3"
+	shows "\<forall>vmap. \<exists>c' \<in> set (fst (augc c (idset (\<Union>(set (c # xs))))) @ xs). \<forall>l \<in> c'. \<not>(vmap\<up>) l"
+	using assms
+proof (intro allI)
+	let ?vars = "idset (\<Union>(set (c # xs)))"
+
+	fix vmap
+	have "(\<forall>l \<in> c. \<not>(vmap\<up>) l) \<or> (\<exists>c' \<in> set xs. \<forall>l \<in> c'. \<not>(vmap\<up>) l)"
+		using assms by simp
+	then consider (hd) "(\<forall>l \<in> c. \<not>(vmap\<up>) l)"
+		| (tl) "(\<exists>c' \<in> set xs. \<forall>l \<in> c'. \<not>(vmap\<up>) l)"
+		by blast
+	thus "\<exists>c' \<in> set (fst (augc c ?vars) @ xs). \<forall>l \<in> c'. \<not>(vmap\<up>) l"
+	proof cases
+		case hd
+		show "\<exists>c' \<in> set (fst (augc c ?vars) @ xs). \<forall>l \<in> c'. \<not>(vmap\<up>) l"
+		proof (rule ccontr)
+			assume a: "\<not>(\<exists>c' \<in> set (fst (augc c ?vars) @ xs). \<forall>l \<in> c'. \<not>(vmap\<up>) l)"
+
+			hence "\<forall>c' \<in> set (fst (augc c ?vars) @ xs). \<not>(\<forall>l \<in> c'. \<not>(vmap\<up>) l)"
+				by simp
+			hence f: "\<forall>c' \<in> set (fst (augc c ?vars) @ xs). \<exists>l \<in> c'. (vmap\<up>) l"
+				by simp
+
+			then consider (card1) "card c = 1"
+				| (card2) "card c = 2"
+				| (card3) "card c = 3"
+				using assms by arith
+			thus "False"
+			proof cases
+				case card1
+				obtain x where x: "c = {x}"
+					using card1 card_1_singletonE by blast
+		
+				let ?x = "fst (pop c)"
+				let ?v1 = "fresh ?vars undefined"
+				let ?v2 = "fresh (insert ?v1 ?vars) undefined"
+		
+				have expand: "fst (augc c ?vars) = {Pos ?v1, Pos ?v2, x} # {Pos ?v1, Neg ?v2, x}
+																					# {Neg ?v1, Pos ?v2, x} # {Neg ?v1, Neg ?v2, x} # []"
+					using card1 x pop_isin
+					by (smt (verit) augc.simps fst_conv insert_not_empty insert_subset subset_insertI subset_singletonD)
+
+				moreover have "\<not>(vmap\<up>) x"
+					using x hd by blast
+
+				ultimately show ?thesis
+					using a ex_mid_lift by fastforce
+			next
+				case card2
+				obtain x y where xy: "c = {x, y}" and x: "fst (pop c) = x"
+					using card2 pop_card pop_ins
+					by (metis One_nat_def Suc_1 card_eq_0_iff diff_Suc_1 finite_insert old.nat.distinct(1))
+	
+				hence y: "fst (pop (snd (pop c))) = y"
+					using card2 pop_card pop_ins
+					by (metis Diff_insert_absorb One_nat_def Suc_1 card_eq_0_iff card_insert_if finite.emptyI finite_insert insert_not_empty n_not_Suc_n singleton_insert_inj_eq)
+	
+				let ?v = "fresh ?vars undefined"
+				have expand: "fst (augc c ?vars) = {Pos ?v, x, y} # {Neg ?v, x, y} # []"
+					using card2 x y
+					by (metis One_nat_def augc.simps fst_conv n_not_Suc_n numeral_2_eq_2)
+
+				moreover have "\<not>(vmap\<up>) x \<and> \<not>(vmap\<up>) y"
+					using xy hd by blast
+
+				ultimately show ?thesis
+					using a ex_mid_lift by fastforce
+			next
+				case card3
+				hence "fst (augc c ?vars) = c # []"
+					by simp
+				hence "\<exists>l \<in> c. (vmap\<up>) l"
+					using f by simp
+				thus ?thesis
+					using hd by simp
+			qed
+		qed
+	next
+		case tl
+		thus ?thesis by auto
+	qed
+qed
+
 lemma reverse_checkpoint_augc:
 	assumes "\<not> le3sat (c # xs)"
 	shows "\<not> le3sat (fst (augc c (idset (\<Union>(set (c # xs))))) @ xs)"
 	using assms
 proof (intro notI conjI)
 	let ?vars = "idset (\<Union>(set (c # xs)))"
-	assume "\<not> le3sat (c # xs)"
-	assume "le3sat (fst (augc c ?vars) @ xs)"
+	assume a: "\<not> le3sat (c # xs)"
+	assume f: "le3sat (fst (augc c ?vars) @ xs)"
 
+	hence vmap_f_conj: "(\<exists>vmap. \<forall>c' \<in> set (fst (augc c ?vars) @ xs). \<exists>l \<in> c'. (vmap\<up>) l)
+										\<and> (\<forall>c' \<in> set (fst (augc c ?vars) @ xs). card c > 0)
+										\<and> (\<forall>c' \<in> set (fst (augc c ?vars) @ xs). card c \<le> 3)"
+		unfolding le3sat_def sat_def models_def by simp
+	hence vmap_f: "\<exists>vmap. \<forall>c' \<in> set (fst (augc c ?vars) @ xs). \<exists>l \<in> c'. (vmap\<up>) l"
+			and lo_f: "\<forall>c' \<in> set (fst (augc c ?vars) @ xs). card c > 0"
+			and hi_f: "\<forall>c' \<in> set (fst (augc c ?vars) @ xs). card c \<le> 3"
+		by blast+
 
-	show "False"
+	have "\<not>(\<exists>vmap. \<forall>c' \<in> set (c # xs). \<exists>l \<in> c'. (vmap\<up>) l)
+			\<or> \<not>(\<forall>c' \<in> set (c # xs). card c > 0)
+			\<or> \<not>(\<forall>c' \<in> set (c # xs). card c \<le> 3)"
+		using a f unfolding le3sat_def sat_def models_def by auto
+	hence "(\<forall>vmap. \<exists>c' \<in> set (c # xs). \<forall>l \<in> c'. \<not>(vmap\<up>) l)
+			\<or> (\<exists>c' \<in> set (c # xs). card c = 0)
+			\<or> (\<exists>c' \<in> set (c # xs). card c > 3)"
+		by fastforce
+	then consider (vmap) "\<forall>vmap. \<exists>c' \<in> set (c # xs). \<forall>l \<in> c'. \<not>(vmap\<up>) l"
+		| (lo) "\<exists>c' \<in> set (c # xs). card c = 0"
+		| (hi) "\<exists>c' \<in> set (c # xs). card c > 3"
+		by blast
+	thus "False"
+	proof cases
+		case vmap
+		thm reverse_checkpoint_augc_aux
+		have "\<forall>vmap. \<exists>c' \<in> set (fst (augc c ?vars) @ xs). \<forall>l \<in> c'. \<not> (vmap\<up>) l"
+			apply (rule reverse_checkpoint_augc_aux)
+			using vmap lo_f hi_f by fastforce+
+
+		thus ?thesis using vmap_f by meson
+	next
+		case lo
+		then obtain c' where c': "c' \<in> set (c # xs)"
+			by blast
+		then consider (hd) "c' = c"
+			| (tl) "c' \<in> set xs"
+			by fastforce
+		thus ?thesis
+		proof cases
+			case hd
+			hence expand: "fst (augc c ?vars) = c # []"
+				using lo by simp
+
+			hence "c \<in> set (fst (augc c ?vars) @ xs)"
+				by simp
+			hence "\<not>(\<forall>c' \<in> set (fst (augc c ?vars) @ xs). card c > 0)"
+				using lo by simp
+			thus ?thesis 
+				using lo_f by blast
+		next
+			case tl
+			thus ?thesis 
+				using lo lo_f by fastforce
+		qed
+	next
+		case hi
+		then obtain c' where c': "c' \<in> set (c # xs)"
+			by blast
+		then consider (hd) "c' = c"
+			| (tl) "c' \<in> set xs"
+			by fastforce
+		thus ?thesis
+		proof cases
+			case hd
+			hence expand: "fst (augc c ?vars) = c # []"
+				using hi by simp
+
+			hence "c \<in> set (fst (augc c ?vars) @ xs)"
+				by simp
+			hence "\<not>(\<forall>c' \<in> set (fst (augc c ?vars) @ xs). card c \<le> 3)"
+				using hi by simp
+			thus ?thesis 
+				using hi_f by blast
+		next
+			case tl
+			thus ?thesis 
+				using hi hi_f by fastforce
+		qed
+	qed
 qed
 
 
