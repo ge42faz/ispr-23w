@@ -17,6 +17,9 @@ definition sat :: "'a lit set list \<Rightarrow> bool" where
 definition le3sat :: "'a lit set list \<Rightarrow> bool"
 	where "le3sat expr = (sat expr \<and> (\<forall>clause \<in> set expr. card clause \<le> 3))"
 
+definition eq3sat :: "'a lit set list \<Rightarrow> bool"
+	where "eq3sat expr = (sat expr \<and> (\<forall>clause \<in> set expr. card clause = 3))"
+
 
 lemma "sat Nil"
 	unfolding sat_def models_def 
@@ -4656,18 +4659,427 @@ lemma sat_reduce_le3sat: "is_reduction preproc sat_pset le3sat_pset"
 	using SAT_iff_le3SAT preproc_def to_le3sat_def by metis+
 
 
-(*
-fun augc :: "('a :: fresh) lit list \<Rightarrow> 'a set \<Rightarrow> 'a lit set list * 'a set"
-	where "augc (x # []) vars = (
-		let v1 = fresh vars undefined in
-		let v2 = fresh (insert v1 vars) undefined in
-		({Pos v1, Pos v2, x} # {Pos v1, Neg v2, x} # {Neg v1, Pos v2, x} # {Neg v1, Neg v2, x} # [], {v1, v2} \<union> vars)
+
+
+fun augc :: "('a :: fresh) lit set \<Rightarrow> 'a set \<Rightarrow> 'a lit set list * 'a set"
+	where "augc c vars = (
+		if card c = 1 then
+			let x = fst (pop c) in
+			let v1 = fresh vars undefined in
+			let v2 = fresh (insert v1 vars) undefined in
+			({Pos v1, Pos v2, x} # {Pos v1, Neg v2, x} # {Neg v1, Pos v2, x} # {Neg v1, Neg v2, x} # [], {v1, v2} \<union> vars)
+		else if card c = 2 then
+			let v = fresh vars undefined in
+			let p = pop c in
+			let q = pop (snd p) in
+			({Pos v, fst p, fst q} # {Neg v, fst p, fst q} # [], insert v vars)
+		else
+			(c # [], vars)
 	)"
-	| "augc (x # y # []) vars = (
-		let v = fresh vars undefined in
-		({Pos v, x, y} # {Neg v, x, y} # [], insert v vars)
+
+fun refine_le3 :: "('a :: fresh) lit set list \<Rightarrow> 'a set \<Rightarrow> 'a lit set list"
+	where "refine_le3 [] vars = []"
+	| "refine_le3 (x # xs) vars = (
+			let aug = augc x vars in
+				fst aug @ refine_le3 xs (snd aug)
 	)"
-*)
+
+definition to_3sat :: "('a :: fresh) lit set list \<Rightarrow> 'a lit set list"
+	where "to_3sat expr = refine_le3 expr (idset (\<Union>(set expr)))"
+
+
+lemma augc_card_3:
+	assumes "card c \<le> 3" "card c \<noteq> 0" "finite vars" "c' \<in> set (fst (augc c vars))" "idset c \<subseteq> vars"
+	shows "card c' = 3"
+	using assms
+proof (induction "card c" arbitrary: c c' vars)
+  case 0
+  thus ?case by simp
+next
+  case (Suc n)
+  consider (card1) "card c = 1"
+  	| (card2) "card c = 2"
+		| (card3) "card c = 3"
+		using Suc.prems by arith
+	thus ?case
+	proof cases
+		case card1
+
+		let ?x = "fst (pop c)"
+		let ?v1 = "fresh vars undefined"
+		let ?v2 = "fresh (insert ?v1 vars) undefined"
+
+		have expand: "fst (augc c vars) = {Pos ?v1, Pos ?v2, ?x} # {Pos ?v1, Neg ?v2, ?x}
+																		# {Neg ?v1, Pos ?v2, ?x} # {Neg ?v1, Neg ?v2, ?x} # []"
+			using card1 by (metis One_nat_def augc.simps fst_conv)
+
+		hence setexpand: "set (fst (augc c vars)) = {{Pos ?v1, Pos ?v2, ?x}, {Pos ?v1, Neg ?v2, ?x},
+																								{Neg ?v1, Pos ?v2, ?x}, {Neg ?v1, Neg ?v2, ?x}}"
+			by simp
+
+		moreover have "card {Pos ?v1, Pos ?v2, ?x} = 3" and "card {Pos ?v1, Neg ?v2, ?x} = 3"
+							and "card {Neg ?v1, Pos ?v2, ?x} = 3" and "card {Neg ?v1, Neg ?v2, ?x} = 3"
+		proof -
+			have "?v1 \<noteq> ?v2"
+				using Suc.prems fresh_notIn by (metis finite_insert insertCI)
+			moreover have "?v1 \<noteq> ident ?x"
+				using Suc.prems fresh_notIn idset_iff pop_isin
+				by (smt card_eq_0_iff ident.elims subsetD)
+			moreover have "?v2 \<noteq> ident ?x"
+				using Suc.prems fresh_notIn idset_iff pop_isin
+				by (smt (verit) card_eq_0_iff finite.insertI ident.elims insertCI subset_iff)
+			ultimately show "card {Pos ?v1, Pos ?v2, ?x} = 3" and "card {Pos ?v1, Neg ?v2, ?x} = 3"
+									and "card {Neg ?v1, Pos ?v2, ?x} = 3" and "card {Neg ?v1, Neg ?v2, ?x} = 3"
+				by (metis card_3_iff ident.simps)+
+		qed
+
+		ultimately show ?thesis
+			using Suc.prems by fastforce
+	next
+		case card2
+
+		let ?v = "fresh vars undefined"
+		let ?p = "pop c"
+		let ?q = "pop (snd ?p)"
+
+		have expand: "fst (augc c vars) = {Pos ?v, fst ?p, fst ?q} # {Neg ?v, fst ?p, fst ?q} # []"
+			using card2 by (metis One_nat_def augc.simps fst_conv not_less_eq_eq numeral_2_eq_2)
+
+		hence setexpand: "set (fst (augc c vars)) = {{Pos ?v, fst ?p, fst ?q}, {Neg ?v, fst ?p, fst ?q}}"
+			by simp
+
+		moreover have "card {Pos ?v, fst ?p, fst ?q} = 3" and "card {Neg ?v, fst ?p, fst ?q} = 3"
+		proof -
+			have "Pos ?v \<noteq> fst ?p" and "Neg ?v \<noteq> fst ?p"
+				using Suc.prems fresh_notIn idset_iff pop_isin 
+				by (metis card_eq_0_iff subsetD)+
+			moreover have "Pos ?v \<noteq> fst ?q" and "Neg ?v \<noteq> fst ?q"
+				using Suc.prems fresh_notIn idset_iff pop_card pop_ins card2
+				by (smt card.empty card.infinite diff_Suc_1 insertCI numeral_2_eq_2 subsetD)+
+			moreover have "fst ?p \<noteq> fst ?q"
+				using Suc.prems pop_card pop_ins card2
+				by (metis Suc_inject card_eq_0_iff insert_absorb2 numeral_2_eq_2)
+			ultimately show "card {Pos ?v, fst ?p, fst ?q} = 3" and "card {Neg ?v, fst ?p, fst ?q} = 3"
+				by simp+
+		qed
+
+		ultimately show ?thesis
+			using Suc.prems by fastforce
+	next
+		case card3
+		hence "fst (augc c vars) = c # []"
+			by simp
+		hence "set (fst (augc c vars)) = {c}"
+			by simp
+		thus ?thesis
+			using card3 Suc.prems by simp
+	qed
+qed
+
+
+lemma checkpoint_augc:
+	assumes "le3sat (c # xs)"
+	shows "le3sat (fst (augc c (idset (\<Union>(set (c # xs))))) @ xs)"
+	using assms unfolding le3sat_def sat_def
+proof (intro conjI)
+	assume a: "((\<exists>\<sigma>. \<sigma> \<Turnstile> c # xs) \<and> (\<forall>c' \<in> set (c # xs). 0 < card c')) \<and> (\<forall>c' \<in> set (c # xs). card c' \<le> 3)"
+	let ?vars = "idset (\<Union> (set (c # xs)))"
+	
+	have lo: "\<forall>c' \<in> set (c # xs). card c' > 0"
+		using a by simp
+	have hi: "\<forall>c' \<in> set (c # xs). card c' \<le> 3"
+		using a by simp
+	have "\<exists>vmap. vmap \<Turnstile> c # xs"
+		using a by simp
+
+	then obtain vmap where vmap: "vmap \<Turnstile> c # xs"
+		by blast
+
+	hence vmap_c: "\<exists>l \<in> c. (vmap\<up>) l"
+		unfolding models_def by simp
+	
+	have "card c > 0" and "card c \<le> 3"
+		using lo hi by simp+
+	then consider (card1) "card c = 1"
+		| (card2) "card c = 2"
+		| (card3) "card c = 3"
+		by arith
+	thus "\<exists>vmap_new. vmap_new \<Turnstile> fst (augc c ?vars) @ xs"
+	proof cases
+		case card1
+		thus ?thesis
+		proof (intro exI)
+			obtain x where x: "c = {x}"
+				using card1 card_1_singletonE by blast
+	
+			hence vmap_x: "(vmap\<up>) x"
+				using vmap_c by simp
+	
+			let ?x = "fst (pop c)"
+			let ?v1 = "fresh ?vars undefined"
+			let ?v2 = "fresh (insert ?v1 ?vars) undefined"
+	
+			have expand: "fst (augc c ?vars) = {Pos ?v1, Pos ?v2, x} # {Pos ?v1, Neg ?v2, x}
+																				# {Neg ?v1, Pos ?v2, x} # {Neg ?v1, Neg ?v2, x} # []"
+				using card1 x pop_isin
+				by (smt (verit) augc.simps fst_conv insert_not_empty insert_subset subset_insertI subset_singletonD)
+	
+			hence "\<forall>c' \<in> set (fst (augc c ?vars)). x \<in> c'"
+				by simp
+	
+			hence "\<forall>c' \<in> set (fst (augc c ?vars)). \<exists>l \<in> c'. (vmap\<up>) l"
+				using vmap_x by blast
+
+			thus "vmap \<Turnstile> fst (augc c ?vars) @ xs"
+				using vmap
+				by (smt UnE models_def set_append set_subset_Cons subset_iff)
+		qed
+	next
+		case card2
+		thus ?thesis
+		proof (intro exI)
+			obtain x y where xy: "c = {x, y}" and x: "fst (pop c) = x"
+				using card2 pop_card pop_ins
+				by (metis One_nat_def Suc_1 card_eq_0_iff diff_Suc_1 finite_insert old.nat.distinct(1))
+
+			hence y: "fst (pop (snd (pop c))) = y"
+				using card2 pop_card pop_ins
+				by (metis Diff_insert_absorb One_nat_def Suc_1 card_eq_0_iff card_insert_if finite.emptyI finite_insert insert_not_empty n_not_Suc_n singleton_insert_inj_eq)
+
+			hence vmap_xy: "(vmap\<up>) x \<or> (vmap\<up>) y"
+				using vmap_c xy by simp
+
+			let ?v = "fresh ?vars undefined"
+			have expand: "fst (augc c ?vars) = {Pos ?v, x, y} # {Neg ?v, x, y} # []"
+				using card2 x y by (metis Suc_1 augc.simps fst_conv n_not_Suc_n)
+
+			hence "\<forall>c' \<in> set (fst (augc c ?vars)). x \<in> c' \<and> y \<in> c'"
+				by simp
+
+			hence "\<forall>c' \<in> set (fst (augc c ?vars)). \<exists>l \<in> c'. (vmap\<up>) l"
+				using vmap_xy by blast
+
+			thus "vmap \<Turnstile> fst (augc c ?vars) @ xs"
+				using vmap
+				by (smt UnE models_def set_append set_subset_Cons subset_iff)
+		qed
+	next
+		case card3
+		thus ?thesis using a by simp
+	qed
+next
+	assume a: "((\<exists>\<sigma>. \<sigma> \<Turnstile> c # xs) \<and> (\<forall>c' \<in> set (c # xs). 0 < card c')) \<and> (\<forall>c' \<in> set (c # xs). card c' \<le> 3)"
+
+	let ?vars = "idset (\<Union> (set (c # xs)))"
+	have lo: "\<forall>c' \<in> set (c # xs). card c' > 0"
+		using a by simp
+	have hi: "\<forall>c' \<in> set (c # xs). card c' \<le> 3"
+		using a by simp
+	have "\<exists>vmap. vmap \<Turnstile> c # xs"
+		using a by simp
+
+	then obtain vmap where vmap: "vmap \<Turnstile> c # xs"
+		by blast
+
+	hence vmap_c: "\<exists>l \<in> c. (vmap\<up>) l"
+		unfolding models_def by simp
+	
+	have "card c > 0" and "card c \<le> 3"
+		using lo hi by simp+
+	then consider (card1) "card c = 1"
+		| (card2) "card c = 2"
+		| (card3) "card c = 3"
+		by arith
+	thus "\<forall>c' \<in> set (fst (augc c ?vars) @ xs). 0 < card c'"
+	proof cases
+		case card1
+		thus ?thesis
+		proof (intro ballI)
+			fix c'
+			assume "c' \<in> set (fst (augc c ?vars) @ xs)"
+
+			then consider (xs) "c' \<in> set xs"
+				| (augc) "c' \<in> set (fst (augc c ?vars))"
+				by fastforce
+			thus "card c' > 0"
+			proof cases
+				case xs
+				thus ?thesis by (simp add: lo)
+			next
+				case augc
+	
+				obtain x where x: "c = {x}"
+					using card1 card_1_singletonE by blast
+		
+				let ?x = "fst (pop c)"
+				let ?v1 = "fresh ?vars undefined"
+				let ?v2 = "fresh (insert ?v1 ?vars) undefined"
+		
+				have expand: "fst (augc c ?vars) = {Pos ?v1, Pos ?v2, x} # {Pos ?v1, Neg ?v2, x}
+																					# {Neg ?v1, Pos ?v2, x} # {Neg ?v1, Neg ?v2, x} # []"
+					using card1 x pop_isin
+					by (smt (verit) augc.simps fst_conv insert_not_empty insert_subset subset_insertI subset_singletonD)
+	
+				hence "\<forall>c' \<in> set (fst (augc c ?vars)). x \<in> c'"
+					by simp
+				moreover have "\<forall>c' \<in> set (fst (augc c ?vars)). finite c'"
+					using expand by simp
+				ultimately have "\<forall>c' \<in> set (fst (augc c ?vars)). card c' > 0"
+					by (metis card_gt_0_iff empty_iff)
+
+				thus ?thesis using augc by blast
+			qed
+		qed
+	next
+		case card2
+		thus ?thesis
+		proof (intro ballI)
+			fix c'
+			assume "c' \<in> set (fst (augc c ?vars) @ xs)"
+
+			then consider (xs) "c' \<in> set xs"
+				| (augc) "c' \<in> set (fst (augc c ?vars))"
+				by fastforce
+			thus "card c' > 0"
+			proof cases
+				case xs
+				thus ?thesis by (simp add: lo)
+			next
+				case augc
+	
+				obtain x y where xy: "c = {x, y}" and x: "fst (pop c) = x"
+					using card2 pop_card pop_ins
+					by (metis One_nat_def Suc_1 card_eq_0_iff diff_Suc_1 finite_insert old.nat.distinct(1))
+
+				hence y: "fst (pop (snd (pop c))) = y"
+					using card2 pop_card pop_ins
+					by (metis Diff_insert_absorb One_nat_def Suc_1 card_eq_0_iff card_insert_if finite.emptyI finite_insert insert_not_empty n_not_Suc_n singleton_insert_inj_eq)
+
+				let ?v = "fresh ?vars undefined"		
+				have expand: "fst (augc c ?vars) = {Pos ?v, x, y} # {Neg ?v, x, y} # []"
+					using card2 x y
+					by (metis One_nat_def augc.simps fst_conv n_not_Suc_n numeral_2_eq_2)
+	
+				hence "\<forall>c' \<in> set (fst (augc c ?vars)). x \<in> c'"
+					by simp
+				moreover have "\<forall>c' \<in> set (fst (augc c ?vars)). finite c'"
+					using expand by simp
+				ultimately have "\<forall>c' \<in> set (fst (augc c ?vars)). card c' > 0"
+					by (metis card_gt_0_iff empty_iff)
+
+				thus ?thesis using augc by blast
+			qed
+		qed
+	next
+		case card3
+		thus ?thesis by (simp add: a)
+	qed
+next
+	assume a: "((\<exists>\<sigma>. \<sigma> \<Turnstile> c # xs) \<and> (\<forall>c' \<in> set (c # xs). 0 < card c')) \<and> (\<forall>c' \<in> set (c # xs). card c' \<le> 3)"
+
+	let ?vars = "idset (\<Union> (set (c # xs)))"
+	have lo: "\<forall>c' \<in> set (c # xs). card c' > 0"
+		using a by simp
+	have hi: "\<forall>c' \<in> set (c # xs). card c' \<le> 3"
+		using a by simp
+	have "\<exists>vmap. vmap \<Turnstile> c # xs"
+		using a by simp
+
+	then obtain vmap where vmap: "vmap \<Turnstile> c # xs"
+		by blast
+
+	hence vmap_c: "\<exists>l \<in> c. (vmap\<up>) l"
+		unfolding models_def by simp
+	
+	have "card c > 0" and "card c \<le> 3"
+		using lo hi by simp+
+
+	thus "\<forall>c' \<in> set (fst (augc c ?vars) @ xs). card c' \<le> 3"
+	proof (intro ballI)
+		fix c'
+		assume "c' \<in> set (fst (augc c ?vars) @ xs)"
+
+		then consider (xs) "c' \<in> set xs"
+			| (augc) "c' \<in> set (fst (augc c ?vars))"
+			by fastforce
+		thus "card c' \<le> 3"
+		proof cases
+			case xs
+			thus ?thesis by (simp add: hi)
+		next
+			case augc
+
+			thm augc_card_3
+			have "card c' = 3"
+				apply (rule augc_card_3[where ?c = c and ?vars = ?vars])
+				apply (simp add: lo hi)+
+				using a finite_expr finite_idset apply (metis Sup_insert card_ge_0_finite list.simps(15))
+				using augc apply blast
+				apply (meson UnionI idset_iff list.set_intros(1) subset_iff)
+				done
+
+			thus ?thesis by simp
+		qed
+	qed
+qed
+
+lemma reverse_checkpoint_augc:
+	assumes "\<not> le3sat (c # xs)"
+	shows "\<not> le3sat (fst (augc c (idset (\<Union>(set (c # xs))))) @ xs)"
+	using assms
+proof (intro notI conjI)
+	let ?vars = "idset (\<Union>(set (c # xs)))"
+	assume "\<not> le3sat (c # xs)"
+	assume "le3sat (fst (augc c ?vars) @ xs)"
+
+
+	show "False"
+qed
+
+
+
+
+
+
+
+lemma
+	assumes "le3sat expr"
+	shows "eq3sat (to_3sat expr)"
+	using assms unfolding to_3sat_def
+proof (induction expr rule: rev_induct)
+  case Nil
+  thus ?case by (simp add: eq3sat_def le3sat_def)
+next
+  case (snoc c expr)
+  thm snoc.prems
+  thm snoc.IH
+
+  let ?xs = "refine_le3 (expr) (idset (\<Union>(set (expr @ [c]))))"
+  have "refine_le3 (expr @ [c]) (idset (\<Union>(set (expr @ [c])))) = ?xs @ fst (augc c (idset (\<Union>(set ?xs))))"
+  	apply (induction "length expr" arbitrary: c)
+  	 apply (auto simp add: Let_def split: if_splits)
+  	oops
+
+  then consider (card1) "card c = 1"
+  	| (card2) "card c = 2"
+  	| (card3) "card c = 3"
+  	unfolding le3sat_def sat_def using set_append
+  	by (metis One_nat_def Suc_le_eq Un_iff le_Suc_eq le_less_Suc_eq list.set_intros(1) numeral_2_eq_2 numeral_3_eq_3)
+  thus ?case
+  proof cases
+  	case card1
+  	show ?thesis unfolding eq3sat_def sat_def
+  	proof (intro conjI)
+
+  next
+  	case card2
+  	then show ?thesis sorry
+  next
+  	case card3
+  	then show ?thesis sorry
+  qed
+qed
+
 
 
 
