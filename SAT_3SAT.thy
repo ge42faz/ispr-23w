@@ -4430,7 +4430,7 @@ lemma refc_rotate_card_3:
 	using assms
 proof (induction n arbitrary: xs)
   case 0
-  then show ?case by simp
+  thus ?case by simp
 next
   case (Suc n)
 
@@ -4676,17 +4676,6 @@ fun augc :: "('a :: fresh) lit set \<Rightarrow> 'a set \<Rightarrow> 'a lit set
 		else
 			(c # [], vars)
 	)"
-
-fun refine_le3 :: "('a :: fresh) lit set list \<Rightarrow> 'a set \<Rightarrow> 'a lit set list"
-	where "refine_le3 [] vars = []"
-	| "refine_le3 (x # xs) vars = (
-			let aug = augc x vars in
-				fst aug @ refine_le3 xs (snd aug)
-	)"
-
-definition to_3sat :: "('a :: fresh) lit set list \<Rightarrow> 'a lit set list"
-	where "to_3sat expr = refine_le3 expr (idset (\<Union>(set expr)))"
-
 
 lemma augc_card_3:
 	assumes "card c \<le> 3" "card c \<noteq> 0" "finite vars" "c' \<in> set (fst (augc c vars))" "idset c \<subseteq> vars"
@@ -5200,48 +5189,217 @@ proof (intro notI conjI)
 qed
 
 
+fun augc_rotate
+	where "augc_rotate [] = []"
+	| "augc_rotate (x # xs) = xs @ (fst (augc x (idset (\<Union>(set (x # xs))))))"
+
+lemma augc_ys_drop: "n \<le> length xs \<Longrightarrow> \<exists>ys. (augc_rotate ^^ n) xs = (drop n xs) @ ys"
+	apply (induction n arbitrary: xs)
+	 apply auto
+	by (smt (verit) append.assoc drop_Suc drop_eq_Nil less_Suc_eq_le linorder_not_le list.sel(3) not_less_iff_gr_or_eq augc_rotate.elims tl_append2 tl_drop)
+
+lemma augc_ys_drop_suc: "\<lbrakk> n < length xs; (augc_rotate ^^ n) xs = (drop n xs) @ ys \<rbrakk>
+					\<Longrightarrow> (augc_rotate ^^ Suc n) xs = drop (Suc n) xs @ ys @ fst (augc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+	apply (induction n arbitrary: xs ys)
+	apply (auto simp add: Let_def split: if_splits)
+  apply (smt One_nat_def Suc_eq_numeral augc.simps augc_rotate.elims drop0 drop_Suc fst_conv list.sel(1) list.sel(3) numeral_2_eq_2)
+	apply (smt One_nat_def Suc_eq_numeral augc.simps augc_rotate.elims drop0 drop_Suc fst_conv list.sel(1) list.sel(3) numeral_2_eq_2)
+	apply (smt One_nat_def Suc_eq_numeral augc.simps augc_rotate.elims drop0 drop_Suc fst_conv list.sel(1) list.sel(3) numeral_2_eq_2)
+	by (smt (verit) Cons_nth_drop_Suc One_nat_def Union_Un_distrib append.assoc append_is_Nil_conv augc.simps augc_rotate.elims drop_eq_Nil fst_conv hd_append2 leD list.sel(1) list.sel(3) n_not_Suc_n numeral_2_eq_2 set_append tl_append2)+
+
+lemma le3sat_rotate_append: "le3sat (xs @ ys) \<Longrightarrow> le3sat (ys @ xs)"
+	unfolding le3sat_def sat_def models_def by auto
 
 
-
-
-
-lemma
-	assumes "le3sat expr"
-	shows "eq3sat (to_3sat expr)"
-	using assms unfolding to_3sat_def
-proof (induction expr rule: rev_induct)
-  case Nil
-  thus ?case by (simp add: eq3sat_def le3sat_def)
+lemma augc_rotate_le3sat:
+	assumes "le3sat xs" "n \<le> length xs"
+	shows "le3sat ((augc_rotate ^^ n) xs)"
+	using assms
+proof (induction n arbitrary: xs)
+  case 0
+  then show ?case by simp
 next
-  case (snoc c expr)
-  thm snoc.prems
-  thm snoc.IH
+  case (Suc n)
 
-  let ?xs = "refine_le3 (expr) (idset (\<Union>(set (expr @ [c]))))"
-  have "refine_le3 (expr @ [c]) (idset (\<Union>(set (expr @ [c])))) = ?xs @ fst (augc c (idset (\<Union>(set ?xs))))"
-  	apply (induction "length expr" arbitrary: c)
-  	 apply (auto simp add: Let_def split: if_splits)
-  	oops
+  have sat_n: "le3sat ((augc_rotate ^^ n) xs)"
+  	apply (rule Suc.IH)
+  	using Suc.prems by auto
 
-  then consider (card1) "card c = 1"
-  	| (card2) "card c = 2"
-  	| (card3) "card c = 3"
-  	unfolding le3sat_def sat_def using set_append
-  	by (metis One_nat_def Suc_le_eq Un_iff le_Suc_eq le_less_Suc_eq list.set_intros(1) numeral_2_eq_2 numeral_3_eq_3)
-  thus ?case
-  proof cases
-  	case card1
-  	show ?thesis unfolding eq3sat_def sat_def
-  	proof (intro conjI)
+  then obtain ys where ys: "(augc_rotate ^^ n) xs = (drop n xs) @ ys"
+  	by (metis drop_all nle_le self_append_conv2 augc_ys_drop)
 
-  next
-  	case card2
-  	then show ?thesis sorry
-  next
-  	case card3
-  	then show ?thesis sorry
-  qed
+  hence "le3sat ((augc_rotate ^^ n) xs) = le3sat (drop n xs @ ys)"
+  	by simp
+
+	let ?vars = "idset (\<Union>(set (drop n xs @ ys)))"
+	thm checkpoint_augc
+	have sat_cp: "le3sat (fst (augc (hd (drop n xs)) (idset (\<Union> (set ((hd (drop n xs)) # (tl (drop n xs) @ ys)))))) @ (tl (drop n xs) @ ys))"
+		apply (rule checkpoint_augc) using Suc.prems sat_n ys
+		by (metis Cons_eq_appendI drop_eq_Nil2 list.exhaust_sel not_less_eq_eq)
+
+	have sat_ys: "le3sat ((augc_rotate ^^ n) xs) \<longleftrightarrow> le3sat (drop n xs @ ys)"
+		using ys by simp
+	also have step1: "... \<longleftrightarrow> le3sat (hd (drop n xs) # (tl (drop n xs) @ ys))"
+		using Suc.prems(2) by (metis Cons_eq_appendI drop_eq_Nil2 hd_Cons_tl not_less_eq_eq)
+	also have step2: "... \<longleftrightarrow> le3sat ((fst (augc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))"
+		using sat_cp calculation sat_n
+		by (metis Cons_eq_appendI Suc.prems(2) drop_eq_Nil list.collapse not_less_eq_eq)
+	also have step3: "... \<longleftrightarrow> le3sat (tl (drop n xs) @ ys @ fst (augc (hd (drop n xs)) ?vars))"
+		using le3sat_rotate_append by (metis append.assoc)
+	also have step4: "... \<longleftrightarrow> le3sat ((drop (Suc n) xs) @ ys @ fst (augc (hd (drop n xs)) ?vars))"
+		by (simp add: drop_Suc tl_drop)
+	also have "... \<longleftrightarrow> le3sat ((augc_rotate ^^ Suc n) xs)"
+		using augc_ys_drop_suc sat_ys ys Suc.prems(2) by (metis Suc_le_lessD)
+
+	finally show "le3sat ((augc_rotate ^^ Suc n) xs)"
+		using sat_n sat_ys by blast
 qed
+
+lemma augc_rotate_nle3sat:
+	assumes "\<not> le3sat xs" "n \<le> length xs"
+	shows "\<not> le3sat ((augc_rotate ^^ n) xs)"
+	using assms
+proof (induction n arbitrary: xs)
+  case 0
+  then show ?case by simp
+next
+  case (Suc n)
+
+  have sat_n: "\<not> le3sat ((augc_rotate ^^ n) xs)"
+  	apply (rule Suc.IH)
+  	using Suc.prems by auto
+
+  then obtain ys where ys: "(augc_rotate ^^ n) xs = (drop n xs) @ ys"
+  	by (metis drop_all nle_le self_append_conv2 augc_ys_drop)
+
+  hence "le3sat ((augc_rotate ^^ n) xs) = le3sat (drop n xs @ ys)"
+  	by simp
+
+	let ?vars = "idset (\<Union>(set (drop n xs @ ys)))"
+	thm checkpoint_augc
+	have sat_cp: "\<not> le3sat (fst (augc (hd (drop n xs)) (idset (\<Union> (set ((hd (drop n xs)) # (tl (drop n xs) @ ys)))))) @ (tl (drop n xs) @ ys))"
+		apply (rule reverse_checkpoint_augc) using Suc.prems sat_n ys
+		by (metis Cons_eq_appendI drop_eq_Nil2 list.exhaust_sel not_less_eq_eq)
+
+	have sat_ys: "le3sat ((augc_rotate ^^ n) xs) \<longleftrightarrow> le3sat (drop n xs @ ys)"
+		using ys by simp
+	also have step1: "... \<longleftrightarrow> le3sat (hd (drop n xs) # (tl (drop n xs) @ ys))"
+		using Suc.prems(2) by (metis Cons_eq_appendI drop_eq_Nil2 hd_Cons_tl not_less_eq_eq)
+	also have step2: "... \<longleftrightarrow> le3sat ((fst (augc (hd (drop n xs)) ?vars)) @ (tl (drop n xs) @ ys))"
+		using sat_cp calculation sat_n
+		by (metis Cons_eq_appendI Suc.prems(2) drop_eq_Nil list.collapse not_less_eq_eq)
+	also have step3: "... \<longleftrightarrow> le3sat (tl (drop n xs) @ ys @ fst (augc (hd (drop n xs)) ?vars))"
+		using le3sat_rotate_append by (metis append.assoc)
+	also have step4: "... \<longleftrightarrow> le3sat ((drop (Suc n) xs) @ ys @ fst (augc (hd (drop n xs)) ?vars))"
+		by (simp add: drop_Suc tl_drop)
+	also have "... \<longleftrightarrow> le3sat ((augc_rotate ^^ Suc n) xs)"
+		using augc_ys_drop_suc sat_ys ys Suc.prems(2) by (metis Suc_le_lessD)
+
+	finally show "\<not> le3sat ((augc_rotate ^^ Suc n) xs)"
+		using sat_n sat_ys by blast
+qed
+
+thm refc_rotate_card_3
+lemma augc_rotate_card_3:
+	assumes "le3sat xs" "n \<le> length xs"
+	shows "\<forall>c \<in> set (drop (length xs - n) ((augc_rotate ^^ n) xs)). card c = 3"
+	using assms
+proof (induction n arbitrary: xs)
+  case 0
+  thus ?case by simp
+next
+  case (Suc n)
+
+  have "\<exists>ys. (augc_rotate ^^ n) xs = drop n xs @ ys"
+  	using augc_ys_drop Suc.prems Suc_leD by blast
+
+  then obtain ys where ys: "(augc_rotate ^^ n) xs = drop n xs @ ys"
+  	by blast
+
+  have expand_suc: "(augc_rotate ^^ Suc n) xs = (drop (Suc n) xs) @ ys @ fst (augc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys)))))"
+  	apply (rule augc_ys_drop_suc)
+  	using Suc.prems ys by arith+
+
+  thus ?case
+  proof (intro ballI)
+  	fix c
+  	assume c: "c \<in> set (drop (length xs - (Suc n)) ((augc_rotate ^^ Suc n) xs))"
+
+		hence ys_alt: "ys = (drop (length xs - n) ((augc_rotate ^^ n) xs))"
+			using ys by simp
+
+		hence "c \<in> set (ys @ fst (augc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys))))))"
+			using expand_suc ys c by simp
+
+  	then consider (set_ys) "c \<in> set ys"
+			| (rear) "c \<in> set (fst (augc (hd (drop n xs)) (idset (\<Union>(set (drop n xs @ ys))))))"
+			using expand_suc by fastforce
+		thus "card c = 3"
+		proof cases
+			case set_ys
+			then show ?thesis
+				using Suc.IH Suc.prems(1) Suc.prems(2) Suc_leD ys_alt by blast
+		next
+			case rear
+			thm augc_card_3
+			show ?thesis
+				apply (rule augc_card_3[where ?c = "hd (drop n xs)" and ?vars = "idset (\<Union>(set (drop n xs @ ys)))"])
+				using Suc.prems le3sat_def apply (metis Suc_le_lessD hd_drop_conv_nth in_set_conv_nth)
+				using Suc.prems le3sat_def sat_def apply (metis Suc_le_lessD hd_drop_conv_nth less_numeral_extra(3) nth_mem)
+				using Suc.prems augc_rotate_le3sat finite_expr_idset le3sat_def sat_def ys apply (metis Suc_leD card.infinite less_numeral_extra(3))
+				using rear apply simp
+				using Suc.prems idset_iff apply (smt UnionI append_is_Nil_conv drop_eq_Nil hd_append2 list.set_sel(1) not_less_eq_eq subset_iff)
+				done
+		qed
+	qed
+qed
+
+
+lemma transform_le3sat:
+	assumes "le3sat xs"
+	shows "le3sat ((augc_rotate ^^ length xs) xs)"
+	using assms augc_rotate_le3sat by fastforce
+
+lemma transform_nle3sat:
+	assumes "\<not> le3sat xs"
+	shows "\<not> le3sat ((augc_rotate ^^ length xs) xs)"
+	using assms augc_rotate_nle3sat by fastforce
+
+find_theorems drop 0
+lemma transform_eq3:
+	assumes "le3sat xs"
+	shows "\<forall>c \<in> set ((augc_rotate ^^ length xs) xs). card c = 3"
+	using assms augc_rotate_card_3 drop_0 by fastforce
+
+lemma le3sat_to_eq3sat:
+	assumes "le3sat xs"
+	shows "eq3sat ((augc_rotate ^^ length xs) xs)"
+	using assms transform_le3sat transform_eq3 unfolding le3sat_def eq3sat_def by fastforce
+
+lemma eq3sat_to_le3sat:
+	assumes "\<not> le3sat xs"
+	shows "\<not> eq3sat ((augc_rotate ^^ length xs) xs)"
+	using assms transform_nle3sat transform_eq3 unfolding le3sat_def eq3sat_def by fastforce
+
+lemma le3sat_iff_3sat: "le3sat xs \<longleftrightarrow> eq3sat ((augc_rotate ^^ length xs) xs)"
+	using eq3sat_to_le3sat le3sat_to_eq3sat by fastforce
+
+
+definition eq3sat_pset :: "('a :: fresh) lit set list set"
+	where "eq3sat_pset = {expr. eq3sat expr}"
+
+definition refine_le3 :: "('a :: fresh) lit set list \<Rightarrow> 'a set \<Rightarrow> 'a lit set list"
+	where "refine_le3 xs vars = (augc_rotate ^^ length xs) xs"
+
+definition to_3sat :: "('a :: fresh) lit set list \<Rightarrow> 'a lit set list"
+	where "to_3sat expr = refine_le3 expr (idset (\<Union>(set expr)))"
+
+thm sat_reduce_le3sat
+lemma le3sat_reduce_3sat: "is_reduction to_3sat le3sat_pset eq3sat_pset"
+	unfolding is_reduction_def to_3sat_def le3sat_pset_def eq3sat_pset_def refine_le3_def
+	using eq3sat_def le3sat_def le3sat_iff_3sat by blast
+
+
 
 
 
