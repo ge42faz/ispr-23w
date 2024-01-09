@@ -5400,8 +5400,8 @@ lemma le3sat_reduce_3sat: "is_reduction to_3sat le3sat_pset eq3sat_pset"
 	using eq3sat_def le3sat_def le3sat_iff_3sat by blast
 
 
-
-
+lemma sat_reduce_3sat: "is_reduction (to_3sat \<circ> preproc) sat_pset eq3sat_pset"
+	using sat_reduce_le3sat le3sat_reduce_3sat by (rule is_reduction_trans)
 
 
 
