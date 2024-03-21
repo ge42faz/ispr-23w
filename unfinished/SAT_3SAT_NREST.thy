@@ -28,19 +28,22 @@ term tl
 definition tl_c :: "'a list \<Rightarrow> 'a list nrest"
 	where "tl_c xs = REST [tl xs \<mapsto> 1]"
 
-(*
+
 term last
 definition last_c :: "'a list \<Rightarrow> 'a nrest"
-	where "last_c (x # xs) = RECT (\<lambda>fix xs.
+	where "last_c xs = RECT (\<lambda>fix xs.
 		do	{
-			len \<leftarrow> length_c xs;
+			hd \<leftarrow> hd_c xs;
+			tl \<leftarrow> tl_c xs;
+			len \<leftarrow> length_c tl;
 			cond \<leftarrow> SPECT [len = 0 \<mapsto> nat_comp_c];
 			if cond then
-				
+				RETURNT hd
 			else
+				fix tl
 		}
-	) (x # xs)"
-*)
+	) xs"
+
 
 term Cons
 definition cons_c :: "'a \<Rightarrow> 'a list \<Rightarrow> 'a list nrest"
@@ -108,9 +111,32 @@ term insert
 definition insert_c :: "'a \<Rightarrow> 'a set \<Rightarrow> 'a set nrest"
 	where "insert_c x A = REST [insert x A \<mapsto> let n = card A in 1 + (n*(elog n))]"
 
+term union
+definition union_c :: "'a set \<Rightarrow> 'a set \<Rightarrow> 'a set nrest"
+	where "union_c A B = REST [
+		A \<union> B \<mapsto>
+			let n = card A in
+			let m = card B in
+			if n \<ge> m then
+				elog m*(elog (nat (ceiling (n/m)) + 1))
+			else
+				elog n*(elog (nat (ceiling (m/n)) + 1))
+	]"
+
 term pop
 definition pop_c :: "'a lit set \<Rightarrow> ('a lit * 'a lit set) nrest"
 	where "pop_c c = REST [pop c \<mapsto> let n = card c in 1 + elog n]"
+
+term ident
+definition ident_c :: "'a lit \<Rightarrow> 'a nrest"
+	where "ident_c l = REST [ident l \<mapsto> 1]"
+
+definition idset :: "'a lit set \<Rightarrow> 'a set"
+	where "idset clause = {ident x | x. x \<in> clause}"
+term idset
+definition idset_c :: "'a lit set \<Rightarrow> 'a set nrest"
+	where "idset_c clause = REST [idset clause \<mapsto> let n = card clause in n*(1 + elog n)]"
+
 
 (* tuples *)
 term fst

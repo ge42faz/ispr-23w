@@ -5415,6 +5415,7 @@ lemma "sum card (set l) = (\<Sum>s\<in>set l . card s)"
 lemma "Ball (set l) P = (\<forall>x\<in>set l . P x)"
 	by rule
 
+(*
 lemma splc_card_un:
 	assumes "finite c" "s = stock (card c - 3) vars" "s' = tl (rev s)" "length s' = 2 * (card c - 3) - 1"
 					"l = splc c s' init" "card c \<ge> 4" "finite vars" "init \<notin> set s' \<union> c" "set s' \<inter> c = {}"
@@ -5438,8 +5439,9 @@ next
   	case gt4
 
   	thm Suc.hyps(1)
-  	then show ?thesis sorry
+  	then show ?thesis oops
   qed
 qed
+*)
 
 end
