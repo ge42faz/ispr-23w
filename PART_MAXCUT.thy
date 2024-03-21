@@ -1,13 +1,10 @@
-theory Test
+theory PART_MAXCUT
 	imports Complex_Main "../Reductions"
 begin
 
 definition partition_pset
 	where "partition_pset \<equiv> {as::nat list. \<exists>xs. (\<forall>i < length xs. xs ! i \<in> {0, 1}) \<and> length as = length xs
   				\<and> (\<Sum>i < length as. as ! i * xs ! i) = (\<Sum>i < length as. as ! i * (1 - xs ! i))}"
-
-definition alt_partition_pset :: "nat list set"
-	where "alt_partition_pset = {as. \<exists>S. S \<subseteq> {..< length as} \<and> sum ((!) as) S = sum ((!) as) ({..< length as} - S)}"
 
 definition cutset :: "('a * 'a) set \<Rightarrow> 'a set \<Rightarrow> ('a * 'a) set"
 	where "cutset E S = {(u, v) | u v. (u, v) \<in> E \<and> u \<in> S \<and> v \<notin> S}"
@@ -282,8 +279,6 @@ lemma a:
 	shows "{i. i < length xs \<and> xs ! i = 1} \<subseteq> {0 ..< length xs}"
 	using assms by fastforce
 
-
-
 lemma set_filter: "{(v, i) | i. i < length xs \<and> xs ! i = v} = set (filter (\<lambda>n. fst n = v) (zip xs [0 ..< length xs]))" 
 proof (induction xs arbitrary: v rule: rev_induct)
   case Nil
@@ -330,14 +325,6 @@ lemma "set (filter (\<lambda>n. fst n = 1) (zip xs [0 ..< length xs])) \<subsete
 lemma "snd ` {(v, i) | i. i < length xs \<and> xs ! i = v} = {i. i < length xs \<and> xs ! i = v}"
 	by force
 
-find_theorems sum nth
-lemma "sum (\<lambda>u. as ! u) {i. i < length xs \<and> xs ! i = v} = fold (+) (map snd (filter (\<lambda>n. fst n = v) (zip (xs :: nat list) (as :: nat list)))) 0"
-	apply (subst eq_commute)
-	apply (subst foldr_fold[symmetric])
-	subgoal by fastforce
-	subgoal
-		apply (subst sum_list.eq_foldr[symmetric])
-
 lemma "sum snd {(v, i) | i. i < length xs \<and> xs ! i = v} = fold (+) (map snd (filter (\<lambda>n. fst n = v) (zip xs [0 ..< length xs]))) 0"
 	apply (subst eq_commute)
 	apply (subst foldr_fold[symmetric])
@@ -351,34 +338,6 @@ lemma "sum snd {(v, i) | i. i < length xs \<and> xs ! i = v} = fold (+) (map snd
 			subgoal apply (subst set_filter[symmetric]) by metis.
 		subgoal by (rule distinct_filter, rule distinct_zipI2, rule distinct_upt).
 	.
-
-
-lemma asdf: "filter (\<lambda>n. xs ! n = v) [0..<length xs] = map snd (filter (\<lambda>n. fst n = v) (zip xs [0..<length xs]))"
-	oops
-	apply (induction xs arbitrary: v)
-	apply auto 
-
-
-	find_theorems "sum ?f (set ?xs)"
-
-lemma "sum (\<lambda>u. (as :: nat list) ! u) {i. i < length xs \<and> xs ! i = v} = fold (+) (map (\<lambda>i. as ! snd i) (filter (\<lambda>n. fst n = v) (zip (xs :: nat list) [0 ..< length xs]))) 0"
-	
-
-
-(*
-lemma "\<forall>x \<in> set xs. x \<in> {0, 1} \<Longrightarrow> sum (\<lambda>p. as ! snd p) {(1, i) | i. i < length xs \<and> xs ! i = 1} = fold (+) (map (\<lambda>x. fst x * snd x) (zip xs as)) 0"
-	apply (subst eq_commute)
-	apply (subst foldr_fold[symmetric])
-	subgoal using add.left_commute by fastforce
-	subgoal
-		apply (subst sum_list.eq_foldr[symmetric])
-		apply (subgoal_tac "distinct (zip xs as)")
-		subgoal
-			apply (subst sum.distinct_set_conv_list[symmetric])
-			subgoal by assumption
-			subgoal 
-*)
-
 
 lemma aux_upt_set: "set [0..<length l] = {..<length l}"
 	by auto
@@ -793,99 +752,8 @@ proof -
 	finally show ?thesis.
 qed
 
-lemma alt_partition: "partition_pset \<subseteq> alt_partition_pset"
-proof (intro subsetI)
-	fix as
-	assume "as \<in> partition_pset"
-	hence "\<exists>xs. (\<forall>i < length xs. xs ! i \<in> {0, 1}) \<and> length as = length xs
-  				\<and> (\<Sum>i < length as. as ! i * xs ! i) = (\<Sum>i < length as. as ! i * (1 - xs ! i))"
-  	unfolding partition_pset_def by simp
-
-  then obtain xs where bit: "\<forall>i < length xs. xs ! i \<in> {0, 1}"
-  								and len: "length as = length xs"
-									and partition: "(\<Sum>i < length as. as ! i * xs ! i) = (\<Sum>i < length as. as ! i * (1 - xs ! i))"
-		by blast
-
-	thus "as \<in> alt_partition_pset"
-		unfolding alt_partition_pset_def
-	proof (intro CollectI)
-		obtain S where S: "S = {i. i < length xs \<and> 0 = xs ! i}"
-			by blast
-		thus "\<exists>S \<subseteq> {..<length as}. sum ((!) as) S = sum ((!) as) ({..<length as} - S)"
-		proof (intro exI conjI)
-			show "S \<subseteq> {..<length as}"
-				using S len by fastforce
-		next
-			have "(\<Sum>i < length as. as ! i * xs ! i) = (\<Sum>i < length as. as ! i * (1 - xs ! i))"
-				by (rule partition)
-			hence "sum (\<lambda>u. as ! u) {i. i < length xs \<and> 1 = xs ! i} = (\<Sum>i < length as. as ! i * (1 - xs ! i))"
-				apply (subst partition_cutset_sum_full[symmetric])
-				subgoal by (rule len)
-				subgoal using bit by (metis in_set_conv_nth)
-				subgoal . .
-			hence "sum (\<lambda>u. as ! u) {i. i < length xs \<and> 1 = xs ! i} = sum (\<lambda>v. as ! v) {i. i < length xs \<and> 0 = xs ! i}"
-				apply (subst partition_cutset_sum_full_coset[symmetric])
-				subgoal by (rule len)
-				subgoal using bit by (metis in_set_conv_nth)
-				subgoal . .
-			hence "sum (\<lambda>u. as ! u) {i. i < length xs \<and> 1 = xs ! i} = sum ((!) as) S"
-				by (subst S)
-			hence "sum (\<lambda>u. as ! u) ({..< length xs} - {i. i < length xs \<and> 0 = xs ! i}) = sum ((!) as) S"
-				apply (subst v_min_s)
-				subgoal using bit by (metis in_set_conv_nth)
-				subgoal . .
-			hence "sum ((!) as) ({..<length as} - S) = sum ((!) as) S"
-				by (subst S, subst len)
-			thus "sum ((!) as) S = sum ((!) as) ({..<length as} - S)"
-				by simp
-		qed
-	qed
-qed
-
-
-lemma alt_partition_rev: "alt_partition_pset \<subseteq> partition_pset"
-proof (intro subsetI)
-	fix as
-	assume "as \<in> alt_partition_pset"
-	hence "\<exists>S. S \<subseteq> {..< length as} \<and> sum ((!) as) S = sum ((!) as) ({..< length as} - S)"
-		unfolding alt_partition_pset_def by simp
-
-	then obtain S where s_subset: "S \<subseteq> {..< length as}"
-									and s_sum: "sum ((!) as) S = sum ((!) as) ({..< length as} - S)"
-		by blast
-
-	thus "as \<in> partition_pset"
-		unfolding partition_pset_def
-	proof (intro CollectI)
-		obtain xs where xs: "(xs :: nat list) = map (\<lambda>i. if i \<in> S then 0 else 1) [0 ..< length as]"
-			by blast
-		thus "\<exists>xs. (\<forall>i<length xs. xs ! i \<in> {0, 1}) \<and>
-         length as = length xs \<and> (\<Sum>i<length as. as ! i * xs ! i) = (\<Sum>i<length as. as ! i * (1 - xs ! i))"
-    proof (intro exI conjI)
-    	show "\<forall>i < length xs. xs ! i \<in> {0, 1}"
-    		using xs by simp
-    next
-    	show "length as = length xs"
-    		using xs by simp
-    next
-    	have bit: "\<forall>i < length xs. xs ! i \<in> {0, 1}"
-    		using xs by simp
-    	have "(\<Sum>i<length as. as ! i * (1 - xs ! i)) = (\<Sum>i\<in>S. as ! i)"
-    		using xs 
-
-    	show "(\<Sum>i<length as. as ! i * xs ! i) = (\<Sum>i<length as. as ! i * (1 - xs ! i))"
-    		using s_sum xs cutset_weight_iff
-
 definition partition_maxcut :: "nat list \<Rightarrow> (nat \<times> nat) set \<times> nat set \<times> (nat \<times> nat \<Rightarrow> real) \<times> real"
 	where "partition_maxcut as = ({..< length as} \<times> {..< length as}, {..< length as}, real \<circ> ew as, (\<Sum>i < length as. as ! i)\<^sup>2 / 4)"
-
-value "map (\<lambda>i. if i \<in> V then 0 else 1) [0..<length xs]"
-
-lemma "real a = real b \<longleftrightarrow> a = b"
-
-
-lemma real_aux: "real (sum f A) = sum (real \<circ> f) A"
-	by simp
 
 lemma "is_reduction partition_maxcut partition_pset maxcut_pset"
 	unfolding is_reduction_def
@@ -1063,138 +931,5 @@ proof (intro allI)
     qed
   qed
 qed
-
-
-
-
-
-
-
-lemma
-	assumes "\<forall>x \<in> set xs. x \<in> {0, 1}"
-	shows "sum (\<lambda>u. as ! u) (snd ` {(1, i) | i. i < length xs \<and> xs ! i = 1}) = fold (+) (rev (map (\<lambda>x. fst x * snd x) (zip xs as))) 0"
-	using assms
-proof (induction xs arbitrary: as rule: rev_induct)
-  case Nil
-  thus ?case by simp
-next
-  case (snoc x xs)
-  thm snoc.IH
-  thm snoc.prems
-  hence "sum ((!) as) (snd ` {(1, i) |i. i < length (xs @ [x]) \<and> (xs @ [x]) ! i = 1}) = sum ((!) as) (snd ` {(1, i) |i. i < length (xs @ [x]) \<and> (xs @ [x]) ! i = 1}) + "
-  then show ?case 
-qed
-
-lemma "\<forall>x \<in> set xs. x \<in> {0, 1} \<Longrightarrow> sum (\<lambda>u. as ! u) (snd ` {(1, i) | i. i < length xs \<and> xs ! i = 1}) = fold (+) (rev (map (\<lambda>x. fst x * snd x) (zip xs as))) 0"
-proof -
-	have "sum (\<lambda>u. as ! u) (snd ` {(1, i) | i. i < length xs \<and> xs ! i = 1}) = sum (\<lambda>u. as ! u) (snd ` (set (filter (\<lambda>n. fst n = 1) (zip xs [0 ..< length xs]))))"
-		apply (subst set_filter[symmetric, where ?v = 1 and ?xs = xs])
-		unfolding image_def by simp
-	also have "... = sum (\<lambda>u. as ! u) (set (map (snd) (filter (\<lambda>n. fst n = 1) (zip xs [0 ..< length xs]))))"
-		by simp
-
-lemma "(\<Sum>i < length l. (l ! i)) = sum ((!) l) {0..<length l}"
-	unfolding atLeastLessThan_def by simp
-
-lemma "(\<Sum>i < length l. f i) = sum f {..<length l}"
-
-lemma "sum (\<lambda>i. as ! i * xs ! i) {0..<length as} = sum_list (map (\<lambda>i. as ! i * xs ! i) [0..<length as])"
-
-	find_theorems sum set
-	find_theorems sum_list sum
-find_theorems sum_list fold
-find_theorems sum_list sum map
-
-lemma aux: "(map (\<lambda>x. fst x * snd x) xs @ [a * b]) ! length xs = a * b"
-	by (metis length_map nth_append_length)
-
-lemma i: "(i < length l) = (i \<in> set [0..<length l])"
-	by simp
-
-
-
-
-lemma "(\<Sum>i < length l. snd (l ! i) * fst (l ! i)) = fold (\<lambda>x c. fst x * snd x + c) l 0"
-	apply (induction l) apply auto 
-
-lemma
-	assumes "length as = length xs"
-	shows "sum (\<lambda>i. as ! i * xs ! i) {0..<length xs} = fold (\<lambda>x c. fst x * snd x + c) (zip as xs) 0"
-	using assms
-	apply (induction xs arbitrary: as rule: rev_induct)
-	 apply auto
-
-
-lemma
-	assumes "\<forall>i < length xs. xs ! i \<in> {0, 1}" "length as = length xs" "(\<Sum>i < length as. as ! i * xs ! i) = (\<Sum>i < length as. as ! i * (1 - xs ! i))"
-	shows "(\<Sum>i < length as. as ! i * xs ! i) = sum (\<lambda>u. as ! u) (snd ` {(1, i) | i. i < length xs \<and> xs ! i = 1})"
-	using assms
-proof -
-	have "(\<Sum>i < length as. as ! i * xs ! i) = sum (\<lambda>i. as ! i * xs ! i) {..< length as}"
-		by simp
-	also have "... = sum (\<lambda>i. as ! i * xs ! i) {i. i < length as}"
-		by (simp add: lessThan_def)
-	also have "... = sum (\<lambda>i. as ! i) {i. i < length as \<and> xs ! i = 1}"
-		using assms(1-2) proof (induction xs arbitrary: as rule: rev_induct)
-		case Nil
-		thus ?case by simp
-	next
-		case (snoc x xs)
-		thm snoc.IH
-		thm snoc.prems
-
-		then obtain as' a' where as: "as = as' @ [a']"
-			by (metis length_0_conv rev_exhaust)
-		have "(\<Sum>i | i < length as'. as' ! i * xs ! i) = sum ((!) as') {i. i < length as' \<and> xs ! i = 1}"
-			apply (rule snoc.IH)
-			subgoal using snoc.prems(1) by (simp add: less_Suc_eq nth_append)
-			subgoal using snoc.prems(2) as by force.
-		have "(\<Sum>i | i < length as'. as' ! i * xs ! i) = (\<Sum>i < length as'. as' ! i * xs ! i)"
-			unfolding sum_def lessThan_def by blast
-		have "(\<Sum>i<length as'. as ! i * (xs @ [1]) ! i) + as ! length as' = (\<Sum>i | i < length as'. as' ! i * xs ! i)"
-			unfolding sum_def lessThan_def using as snoc.prems(2) 
-			
-
-		consider (one) "x = 1"
-			| (zero) "x = 0"
-			using snoc.prems(1) by fastforce
-		thus ?case
-		proof cases
-			case one
-			hence "(\<Sum>i | i < length as. as ! i * (xs @ [1]) ! i) = sum (\<lambda>i. as ! i * (xs @ [1]) ! i) {..< length as}"
-				by (simp add: lessThan_def)
-			also have "... = sum (\<lambda>i. as ! i * (xs @ [1]) ! i) {..< Suc (length as')}"
-				using as by simp
-			also have "... = sum (\<lambda>i. as ! i * (xs @ [1]) ! i) {..< length as'} + (\<lambda>i. as ! i * (xs @ [1]) ! i) (length as')"
-				using sum.lessThan_Suc by blast
-			also have "... = sum (\<lambda>i. as ! i * (xs @ [1]) ! i) {..< length as'} + a' * 1"
-				using snoc.prems(2) as by (smt add_diff_cancel_right' length_Cons length_append nth_append_length)
-			also have "... = sum (\<lambda>i. as' ! i * xs ! i) {..< length as'} + a' * 1"
-				using snoc.prems(2) as  
-				
-			then show ?thesis sorry
-		next
-			case zero
-			then show ?thesis sorry
-		qed
-
-		then show ?case sorry
-	qed
-
-		oops
-
-
-		apply (induction as arbitrary: xs)
-		 apply auto
-		apply (case_tac "a = 0")
-		 apply auto
-
-lemma                           
-	assumes "\<forall>i < length xs. xs ! i \<in> {0, 1}" "length as = length xs" "(\<Sum>i < length as. as ! i * xs ! i) = (\<Sum>i < length as. as ! i * (1 - xs ! i))"
-	shows "sum (\<lambda>u. as ! u) (set (map snd (filter (\<lambda>n. fst n = 1) (zip xs [0 ..< length xs])))) = sum (\<lambda>v. as ! v) ({0..<length xs} - (set (map snd (filter (\<lambda>n. fst n = 1) (zip xs [0 ..< length xs])))))"
-	using assms unfolding weight_def
-
-
-
 
 end
